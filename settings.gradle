@@ -1,0 +1,3 @@
+include ':openCVLibrary343'
+include ':app'
+rootProject.name = "ArucoSLAM"
