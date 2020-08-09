@@ -21,6 +21,10 @@ android {
         }
     }
 
+    kotlinOptions {
+        freeCompilerArgs = ["-XXLanguage:+InlineClasses"]
+    }
+
     buildTypes {
         release {
             minifyEnabled false
@@ -34,6 +38,9 @@ android {
         }
     }
 }
+
+
+
 
 dependencies {
     implementation fileTree(dir: "libs", include: ["*.jar"])

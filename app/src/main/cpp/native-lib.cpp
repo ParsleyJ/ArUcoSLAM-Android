@@ -4,47 +4,79 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/aruco.hpp>
 #include <android/log.h>
+#include <cmath>
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_parsleyj_arucoslam_MainActivity_getHelloString(
+Java_parsleyj_arucoslam_MainActivity_ndkLibReadyCheck(
         JNIEnv *env,
         jobject /* this */) {
     std::string hello = "JNILibOk";
     return env->NewStringUTF(hello.c_str());
 }
 
-jlong unboxLong(JNIEnv *env, jobject boxedLong) {
-    auto longBoxClass = env->GetObjectClass(boxedLong);
-    return env->GetLongField(boxedLong, env->GetFieldID(
-            longBoxClass,
-            "value",
-            "J"
-    ));
+
+cv::Mat *castToMatPtr(jlong addr) {
+    return (cv::Mat *) addr;
 }
 
-cv::Mat *unboxMat(JNIEnv *env, jobject boxedAddress) {
-    auto longBoxClass = env->GetObjectClass(boxedAddress);
-    return (cv::Mat *) env->GetLongField(boxedAddress, env->GetFieldID(
-            longBoxClass,
-            "value",
-            "J"
-    ));
+template<typename T>
+cv::Ptr<T> jlongToCvPtr(jlong addr) {
+    return cv::Ptr<T>((T *) addr);
 }
+
+template<typename T>
+jlong cvPtrToJlong(cv::Ptr<T> ptr) {
+    return (jlong) ptr.get();
+}
+
+
+extern "C"
+JNIEXPORT jlong JNICALL
+Java_parsleyj_arucoslam_MainActivity_genDictionary(JNIEnv *env, jobject thiz) {
+    return cvPtrToJlong(cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250));
+}
+
+extern "C"
+JNIEXPORT jlong JNICALL
+Java_parsleyj_arucoslam_MainActivity_genCalibrationBoard(JNIEnv *env, jobject thiz, jint markersX,
+                                                         jint markersY, jfloat markerLength,
+                                                         jfloat markerSeparation,
+                                                         jlong ditionaryAddr) {
+
+    cv::Ptr<cv::aruco::Dictionary> dictionary = jlongToCvPtr<cv::aruco::Dictionary>(ditionaryAddr);
+
+
+    cv::Ptr<cv::aruco::GridBoard> gridboard =
+            cv::aruco::GridBoard::create(
+                    markersX,
+                    markersY,
+                    markerLength,
+                    markerSeparation,
+                    dictionary
+            ); // create aruco board
+    return cvPtrToJlong(gridboard.staticCast<cv::aruco::Board>());
+}
+
+
+
 
 extern "C"
 JNIEXPORT void JNICALL
 Java_parsleyj_arucoslam_MainActivity_processCameraFrame(
         JNIEnv *env,
         jobject thiz,
-        jobject input_mat_addr,
-        jobject result_mat_addr
+        jlong dictAddr,
+        jlong cameraMatrixAddr,
+        jlong distCoeffsAddr,
+        jlong input_mat_addr,
+        jlong result_mat_addr
 ) {
-    cv::Mat inputMat = *(cv::Mat *) unboxLong(env, input_mat_addr);
-    cv::Mat resultMat = *(cv::Mat *) unboxLong(env, result_mat_addr);
+    cv::Ptr<cv::aruco::Dictionary> dictionary = jlongToCvPtr<cv::aruco::Dictionary>(dictAddr);
+    cv::Mat inputMat = *castToMatPtr(input_mat_addr);
+    cv::Mat resultMat = *castToMatPtr(result_mat_addr);
+    cv::Mat cameraMatrix = *castToMatPtr(cameraMatrixAddr);
+    cv::Mat distCoeffs = *castToMatPtr(distCoeffsAddr);
 
-
-    //todo move outside
-    auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
 
     std::vector<cv::Mat> channels(3);
     cv::split(inputMat, channels);
@@ -63,6 +95,7 @@ Java_parsleyj_arucoslam_MainActivity_processCameraFrame(
     std::vector<int> ids;
     std::vector<std::vector<cv::Point2f>> corners;
 
+
     __android_log_print(ANDROID_LOG_DEBUG, "AAAAAAAAAAAAAAAAA",
                         "inputMat.channels() == %d", inputMat.channels());
     cv::aruco::detectMarkers(inputMat, dictionary, corners, ids);
@@ -77,29 +110,18 @@ Java_parsleyj_arucoslam_MainActivity_processCameraFrame(
     if (!ids.empty()) {
         __android_log_print(ANDROID_LOG_DEBUG, "AAAAAAAAAAAAAAAAA",
                             "DRAWING DETECTORS");
-//        cv::aruco::drawDetectedMarkers(tmpMat, corners, ids);
+        cv::aruco::drawDetectedMarkers(tmpMat, corners, ids);
     }
 
-//    float intrinsicData[9] = {
-//            163.4545858698673, 0, 127.5,
-//            0, 163.4545858698673, 71.5,
-//            0,0,1
-//    };
-//    float distData[5] = {
-//            0.0430674624,
-//            -0.124233284
-//    };
-//    cv::Mat cameraMatrix(3, 3, CV_32F, intrinsicData);
-//    cv::Mat distCoeffs(5, 1, CV_32F, distData);
 //
-//    std::vector<cv::Vec3d> rvecs, tvecs;
-//    cv::aruco::estimatePoseSingleMarkers(
-//            corners, 0.05, cameraMatrix, distCoeffs, rvecs, tvecs);
-//    for (int i = 0; i < rvecs.size(); i++) {
-//        auto rvec = rvecs[i];
-//        auto tvec = tvecs[i];
-//        cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs, rvec, tvec, 0.1);
-//    }
+    std::vector<cv::Vec3d> rvecs, tvecs;
+    cv::aruco::estimatePoseSingleMarkers(
+            corners, 0.05, cameraMatrix, distCoeffs, rvecs, tvecs);
+    for (int i = 0; i < rvecs.size(); i++) {
+        auto rvec = rvecs[i];
+        auto tvec = tvecs[i];
+        cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs, rvec, tvec, 0.1);
+    }
 
     cv::cvtColor(tmpMat, resultMat, CV_RGB2RGBA);
 
@@ -110,58 +132,124 @@ Java_parsleyj_arucoslam_MainActivity_processCameraFrame(
 
 
 
+
+
 extern "C"
-JNIEXPORT jdouble JNICALL
-Java_parsleyj_arucoslam_MainActivity_calibrate(
+JNIEXPORT int JNICALL
+Java_parsleyj_arucoslam_NativeMethods_detectCalibrationCorners(
         JNIEnv *env,
-        jobject thiz,
-        jobject input_mats_addr_boxed,
-        jobject out_camera_matrix_boxed,
-        jobject out_camera_distortion_boxed
+        jclass clazz,
+        jlong input_mat_addr,
+        jlong dictAddr,
+        jobjectArray cornersPoints,
+        jintArray idsVect,
+        jintArray size,
+        jint maxMarkers
 ) {
 
-    cv::Mat cameraMatrix = *unboxMat(env, out_camera_matrix_boxed);
-    cv::Mat cameraDistortion = *unboxMat(env, out_camera_distortion_boxed);
-    std::vector<cv::Mat> mats; //TODO get from input
-    int markersX = 8;
-    int markersY = 5;
-    float markerLength = 50;
-    float markerSeparation = 20;
-    int dictionaryId = 10;
-    auto dictionary = cv::aruco::getPredefinedDictionary(dictionaryId);
 
-    cv::Ptr<cv::aruco::GridBoard> gridboard =
-            cv::aruco::GridBoard::create(
-                    markersX,
-                    markersY,
-                    markerLength,
-                    markerSeparation,
-                    dictionary
-            ); // create aruco board
-    cv::Ptr<cv::aruco::Board> board = gridboard.staticCast<cv::aruco::Board>();
+    auto image = *castToMatPtr(input_mat_addr);
+    auto dictionary = jlongToCvPtr<cv::aruco::Dictionary>(dictAddr);
+
+    std::vector<int> ids;
+    std::vector<std::vector<cv::Point2f>> corners, rejected;
+
+    cv::aruco::detectMarkers(image, dictionary, corners, ids,
+                             cv::aruco::DetectorParameters::create(), rejected);
+
+    if (ids.empty()) {
+        return 0;
+    }
+
+    for (int csi = 0; csi < fmin(corners.size(), maxMarkers); csi++) {
+        std::vector<cv::Point2f> &cornerSet = corners[csi];
+
+        auto fourCorners = env->NewFloatArray(8);
+        const cv::Ptr<cv::Point2f> &ptr = cv::Ptr<cv::Point2f>(cornerSet.data());
+
+        for (int i = 0; i < 8; i += 2) {
+            cv::Point2f &point = cornerSet[i];
+            env->SetFloatArrayRegion(fourCorners, i, 1, &point.x);
+            env->SetFloatArrayRegion(fourCorners, i + 1, 1, &point.y);
+        }
+
+        env->SetObjectArrayElement(cornersPoints, csi, fourCorners);
+    }
+
+    for (int i = 0; i < fmin(ids.size(), maxMarkers); i++) {
+        env->SetIntArrayRegion(idsVect, i, 1, &ids[i]);
+    }
+
+
+    env->SetIntArrayRegion(size, 0, 1, &image.rows);
+    env->SetIntArrayRegion(size, 1, 1, &image.cols);
+    return ids.size();
+}
+extern "C"
+JNIEXPORT jdouble JNICALL
+Java_parsleyj_arucoslam_NativeMethods_calibrate(
+        JNIEnv *env,
+        jclass clazz,
+        jlong dict_addr,
+        jlong calib_board_addr,
+        jobjectArray collected_corners,
+        jobjectArray collectedIDs,
+        jint size_rows,
+        jint size_cols,
+        jlongArray results_addresses
+) {
+
+    auto dictionary = jlongToCvPtr<cv::aruco::Dictionary>(dict_addr);
+    auto board = jlongToCvPtr<cv::aruco::Board>(calib_board_addr);
+
 
     std::vector<std::vector<std::vector<cv::Point2f>>> allCorners;
     std::vector<std::vector<int>> allIds;
-    cv::Size imgSize;
 
-    for(auto& image: mats){
-        cv::Mat imageCopy;
+    jboolean isNotCopy = false;
+    for (int ci = 0; ci < env->GetArrayLength(collected_corners); ci++) {
+        auto frameCorners = jobjectArray(env->GetObjectArrayElement(
+                collected_corners, ci));
+        std::vector<std::vector<cv::Point2f>> frameCornersExtracted;
+        for (int ci2 = 0; ci2 < env->GetArrayLength(frameCorners); ci2++) {
 
-        std::vector<int> ids;
-        std::vector<std::vector<cv::Point2f>> corners, rejected;
+            float *markerCorners = env->GetFloatArrayElements(
+                    jfloatArray(env->GetObjectArrayElement(
+                            frameCorners, ci2
+                    )),
+                    &isNotCopy);
+            std::vector<cv::Point2f> markerCornersExtracted;
+            for (int ci3 = 0; ci3 < 8; ci3 += 2) {
+                markerCornersExtracted.emplace_back(markerCorners[ci3], markerCorners[ci3 + 1]);
+            }
+            frameCornersExtracted.push_back(markerCornersExtracted);
+        }
 
-        cv::aruco::detectMarkers(image, dictionary, corners, ids, cv::aruco::DetectorParameters::create(), rejected);
-
-        image.copyTo(imageCopy);
-
-        allCorners.push_back(corners);
-        allIds.push_back(ids);
-        imgSize = image.size();
+        allCorners.push_back(frameCornersExtracted);
     }
 
-    if(allIds.empty()) {
-//        cerr << "Not enough captures for calibration" << endl;
-        return;
+    for (int i = 0; i < env->GetArrayLength(collectedIDs); i++) {
+        auto intArray = jintArray(env->GetObjectArrayElement(
+                collectedIDs, i
+        ));
+        int *frameIDs = env->GetIntArrayElements(
+                intArray,
+                &isNotCopy);
+        jsize length = env->GetArrayLength(intArray);
+        std::vector<int> frameIDsExtracted(length);
+        for (int i2 = 0; i2 < length; i2++) {
+            frameIDsExtracted.push_back(frameIDs[i2]);
+        }
+        allIds.push_back(frameIDsExtracted);
+    }
+
+    cv::Size imgSize(size_cols, size_rows);
+
+
+    if (allIds.empty()) {
+        __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp",
+                            "Not enough captures for calibration");
+        return 0.0;
     }
 
 
@@ -174,17 +262,29 @@ Java_parsleyj_arucoslam_MainActivity_calibrate(
     std::vector<int> allIdsConcatenated;
     std::vector<int> markerCounterPerFrame;
     markerCounterPerFrame.reserve(allCorners.size());
-    for(unsigned int i = 0; i < allCorners.size(); i++) {
-        markerCounterPerFrame.push_back((int)allCorners[i].size());
-        for(unsigned int j = 0; j < allCorners[i].size(); j++) {
+    for (unsigned int i = 0; i < allCorners.size(); i++) {
+        markerCounterPerFrame.push_back((int) allCorners[i].size());
+        for (unsigned int j = 0; j < allCorners[i].size(); j++) {
             allCornersConcatenated.push_back(allCorners[i][j]);
             allIdsConcatenated.push_back(allIds[i][j]);
         }
     }
+
+    jlong *resultAddresses = env->GetLongArrayElements(results_addresses, &isNotCopy);
     // calibrate camera
-    repError = cv::aruco::calibrateCameraAruco(allCornersConcatenated, allIdsConcatenated,
-                                           markerCounterPerFrame, board, imgSize, cameraMatrix,
-                                           cameraDistortion, rvecs, tvecs, 0);
+    repError = cv::aruco::calibrateCameraAruco(
+            allCornersConcatenated,
+            allIdsConcatenated,
+            markerCounterPerFrame,
+            board,
+            imgSize,
+            *castToMatPtr(resultAddresses[0]),
+            *castToMatPtr(resultAddresses[1]),
+            rvecs,
+            tvecs,
+            0);
+
 
     return repError;
+
 }
