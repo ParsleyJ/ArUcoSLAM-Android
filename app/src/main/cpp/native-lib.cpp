@@ -65,13 +65,12 @@ JNIEXPORT void JNICALL
 Java_parsleyj_arucoslam_MainActivity_processCameraFrame(
         JNIEnv *env,
         jobject thiz,
-        jlong dictAddr,
         jlong cameraMatrixAddr,
         jlong distCoeffsAddr,
         jlong input_mat_addr,
         jlong result_mat_addr
 ) {
-    cv::Ptr<cv::aruco::Dictionary> dictionary = jlongToCvPtr<cv::aruco::Dictionary>(dictAddr);
+    auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
     cv::Mat inputMat = *castToMatPtr(input_mat_addr);
     cv::Mat resultMat = *castToMatPtr(result_mat_addr);
     cv::Mat cameraMatrix = *castToMatPtr(cameraMatrixAddr);
@@ -140,32 +139,41 @@ Java_parsleyj_arucoslam_NativeMethods_detectCalibrationCorners(
         JNIEnv *env,
         jclass clazz,
         jlong input_mat_addr,
-        jlong dictAddr,
         jobjectArray cornersPoints,
         jintArray idsVect,
         jintArray size,
         jint maxMarkers
 ) {
-
+    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
+                        "Invoked detect calibration corners");
 
     auto image = *castToMatPtr(input_mat_addr);
-    auto dictionary = jlongToCvPtr<cv::aruco::Dictionary>(dictAddr);
+    auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
+
+    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
+                        "Input casted");
 
     std::vector<int> ids;
-    std::vector<std::vector<cv::Point2f>> corners, rejected;
+    std::vector<std::vector<cv::Point2f>> corners;
 
-    cv::aruco::detectMarkers(image, dictionary, corners, ids,
-                             cv::aruco::DetectorParameters::create(), rejected);
+    cv::aruco::detectMarkers(image, dictionary, corners, ids);
+
+    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
+                        "Corners detected");
 
     if (ids.empty()) {
+        __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
+                            "Empty ids!");
         return 0;
     }
 
+
+    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
+                        "ids.size == %d", ids.size());
+
     for (int csi = 0; csi < fmin(corners.size(), maxMarkers); csi++) {
         std::vector<cv::Point2f> &cornerSet = corners[csi];
-
         auto fourCorners = env->NewFloatArray(8);
-        const cv::Ptr<cv::Point2f> &ptr = cv::Ptr<cv::Point2f>(cornerSet.data());
 
         for (int i = 0; i < 8; i += 2) {
             cv::Point2f &point = cornerSet[i];
@@ -180,9 +188,14 @@ Java_parsleyj_arucoslam_NativeMethods_detectCalibrationCorners(
         env->SetIntArrayRegion(idsVect, i, 1, &ids[i]);
     }
 
+    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
+                        "Populated arrays");
 
     env->SetIntArrayRegion(size, 0, 1, &image.rows);
     env->SetIntArrayRegion(size, 1, 1, &image.cols);
+
+    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
+                        "Populated size");
     return ids.size();
 }
 extern "C"
@@ -190,8 +203,6 @@ JNIEXPORT jdouble JNICALL
 Java_parsleyj_arucoslam_NativeMethods_calibrate(
         JNIEnv *env,
         jclass clazz,
-        jlong dict_addr,
-        jlong calib_board_addr,
         jobjectArray collected_corners,
         jobjectArray collectedIDs,
         jint size_rows,
@@ -199,9 +210,16 @@ Java_parsleyj_arucoslam_NativeMethods_calibrate(
         jlongArray results_addresses
 ) {
 
-    auto dictionary = jlongToCvPtr<cv::aruco::Dictionary>(dict_addr);
-    auto board = jlongToCvPtr<cv::aruco::Board>(calib_board_addr);
-
+    auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
+    cv::Ptr<cv::aruco::GridBoard> gridboard = cv::aruco::GridBoard::create(
+//            markersX,
+//            markersY,
+//            markerLength,
+//            markerSeparation,
+            8, 5, 50, 20,
+            dictionary
+    ); // create aruco board
+    auto board = gridboard.staticCast<cv::aruco::Board>();
 
     std::vector<std::vector<std::vector<cv::Point2f>>> allCorners;
     std::vector<std::vector<int>> allIds;

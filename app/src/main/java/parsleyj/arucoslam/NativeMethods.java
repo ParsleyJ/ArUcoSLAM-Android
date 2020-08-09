@@ -4,7 +4,6 @@ public class NativeMethods {
 
     public static native int detectCalibrationCorners(
             long inputMatAddr,
-            long dictAddr,
             float[][] cornersPoints,
             int[] idsVect,
             int[] size,
@@ -12,8 +11,6 @@ public class NativeMethods {
     );
 
     public static native double calibrate(
-            long dictAddr,
-            long calibBoardAddr,
             float[][][] collectedCorners,
             int[][] vectors,
             int sizeRows,

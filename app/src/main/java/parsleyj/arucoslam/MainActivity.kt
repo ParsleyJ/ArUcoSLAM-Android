@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.hardware.camera2.CameraManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Looper
 import android.support.v4.app.ActivityCompat
 import android.support.v4.content.ContextCompat
 import android.support.v7.app.AppCompatActivity
@@ -20,17 +21,18 @@ import org.opencv.android.LoaderCallbackInterface
 import org.opencv.android.OpenCVLoader
 import org.opencv.core.Mat
 import org.opencv.core.Size
+import org.opencv.imgproc.Imgproc
+import org.opencv.imgproc.Imgproc.cvtColor
 
 
 const val ArucoSLAMCameraActivityTag = "ArucoSLAMCameraActivity"
 
 const val requiredMarkerCountForCalibrationStep = 10
-const val requiredFramesCountForCalibration = 3
 
 
 class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraViewListener2 {
 
-    private val dictionary: Long by lazy { genDictionary() }
+
     private val collectedCorners = mutableListOf<Array<FloatArray>>()
     private val collectedIds = mutableListOf<IntArray>()
     private var imgSize: Size = Size(0.0, 0.0)
@@ -38,19 +40,6 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     private var distCoeffs: Mat? = null
 
 
-    private val calibrationBoard: Long by lazy {
-        val markersX = 8
-        val markersY = 5
-        val markerLength = 50f
-        val markerSeparation = 20f
-        return@lazy genCalibrationBoard(
-            markersX,
-            markersY,
-            markerLength,
-            markerSeparation,
-            dictionary
-        )
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,7 +85,6 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     private external fun ndkLibReadyCheck(): String
 
     private external fun processCameraFrame(
-        dictionary: Long,
         cameraMatrixAddr: Long,
         distCoeffsAddr: Long,
         inputMatAddr: Long,
@@ -104,56 +92,60 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     )
 
 
-    private external fun genDictionary(): Long
-
-    private external fun genCalibrationBoard(
-        markersX: Int,
-        markersY: Int,
-        markersLength: Float,
-        markersSeparation: Float,
-        dictionaryAddr: Long
-    ): Long
 
 
     private fun collectCalibrationCorners(image: Mat) {
-        val cornersAcceptor = Array(40) { FloatArray(8) { 0.0f } }
-        val idsAcceptor = IntArray(40) { 0 }
-        val sizeAcceptor = IntArray(2) { 0 }
+        Thread{
+            val cornersAcceptor = Array(40) { FloatArray(8) { 0.0f } }
+            val idsAcceptor = IntArray(40) { 0 }
+            val sizeAcceptor = IntArray(2) { 0 }
+            val inputMat2 = Mat()
+            cvtColor(image, inputMat2, Imgproc.COLOR_RGBA2RGB)
 
-        val foundMarkers = NativeMethods.detectCalibrationCorners(
-            image.nativeObjAddr,
-            dictionary,
-            cornersAcceptor,
-            idsAcceptor,
-            sizeAcceptor,
-            40
-        )
+            val foundMarkers = NativeMethods.detectCalibrationCorners(
+                inputMat2.nativeObjAddr,
+                cornersAcceptor,
+                idsAcceptor,
+                sizeAcceptor,
+                40
+            )
 
-        if (foundMarkers > requiredMarkerCountForCalibrationStep) {
-            val cornersSet: Array<FloatArray> = Array(foundMarkers, cornersAcceptor::get)
-            val idSet = IntArray(foundMarkers, idsAcceptor::get)
-            imgSize = Size(sizeAcceptor[0].toDouble(), sizeAcceptor[1].toDouble())
-            collectedCorners.add(cornersSet)
-            collectedIds.add(idSet)
-        }
+            Log.v(ArucoSLAMCameraActivityTag, "foundMarkers == $foundMarkers")
+
+            if (foundMarkers > requiredMarkerCountForCalibrationStep) {
+                Log.v(ArucoSLAMCameraActivityTag, "enough found markers, collecting data...")
+                val cornersSet: Array<FloatArray> = Array(foundMarkers, cornersAcceptor::get)
+                val idSet = IntArray(foundMarkers, idsAcceptor::get)
+                synchronized(this) {
+                    imgSize = Size(sizeAcceptor[0].toDouble(), sizeAcceptor[1].toDouble())
+                    collectedCorners.add(cornersSet)
+                    collectedIds.add(idSet)
+                    Unit
+                }
+                Log.v(ArucoSLAMCameraActivityTag, "collected data")
+            } else {
+                Log.v(ArucoSLAMCameraActivityTag, "not enough found markers, discarded frame")
+            }
+
+        }.start()
     }
 
-    private fun calibrateAttempt(): Boolean {
-        if (collectedIds.size < requiredFramesCountForCalibration) {
-            return false
-        }
-        cameraMatrix = Mat()
-        distCoeffs = Mat()
-        val calibrate = NativeMethods.calibrate(
-            dictionary,
-            calibrationBoard,
-            collectedCorners.toTypedArray(),
-            collectedIds.toTypedArray(),
-            imgSize.height.toInt(),
-            imgSize.width.toInt(),
-            longArrayOf(cameraMatrix!!.nativeObjAddr, distCoeffs!!.nativeObjAddr)
-        )
-        return true
+    private fun calibrateAttempt(){
+        Thread {
+            synchronized(this) {
+                cameraMatrix = Mat()
+                distCoeffs = Mat()
+                NativeMethods.calibrate(
+                    collectedCorners.toTypedArray(),
+                    collectedIds.toTypedArray(),
+                    imgSize.height.toInt(),
+                    imgSize.width.toInt(),
+                    longArrayOf(cameraMatrix!!.nativeObjAddr, distCoeffs!!.nativeObjAddr)
+                )
+            }
+            Looper.prepare()
+            Toast.makeText(this, "CALIBRATED!", Toast.LENGTH_SHORT).show()
+        }.start()
     }
 
     override fun onCameraViewStarted(width: Int, height: Int) {
@@ -167,35 +159,35 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     private var cachedResultMat: Mat? = null
 
 
+    private var discardCounter = 50
+
+
+
+
     override fun onCameraFrame(inputFrame: FixedCameraBridgeViewBase.CvCameraViewFrame?): Mat? {
+        if (discardCounter > 0) {
+            discardCounter--
+            Log.v(ArucoSLAMCameraActivityTag, "discardedFrame")
+            return inputFrame?.rgba()
+        }
 
-//        return if(inputFrame != null){
-//            val rgba = inputFrame.rgba()
-//            val destSize = Size(rgba.size().height, rgba.size().width)
-//            val result = Mat.zeros(destSize, rgba.type())
-//            processCameraFrame(LongBox(rgba.nativeObjAddr), LongBox(result.nativeObjAddr))
-//            result
-//        }else null
-
-//        return if (inputFrame != null) {
-//            val mRgba = inputFrame.rgba()
-//            val mRgbaT = Mat.zeros(mRgba.size(), mRgba.type())
-//            val mRgbaF = Mat.zeros(mRgba.size(), mRgba.type())
-//            Core.transpose(mRgba, mRgbaT)
-//            Imgproc.resize(mRgbaT, mRgbaF, mRgba.size(), 0.0, 0.0, 0)
-//            Core.flip(mRgbaF, mRgba, 1)
-//            mRgba
-//        } else null
 
         if (inputFrame != null) {
+            Log.v(ArucoSLAMCameraActivityTag, "inputFrame != null")
             val inputMat = inputFrame.rgba()
 
             if (cameraMatrix == null || distCoeffs == null) {
-                val calibrateAttemptResult = calibrateAttempt()
-                if (!calibrateAttemptResult) {
+                Log.v(ArucoSLAMCameraActivityTag, "camera matrix and dist coeffs are null")
+
+                if(collectedIds.size>3){
+                    Log.v(ArucoSLAMCameraActivityTag, "Starting calibration attempt")
+                    calibrateAttempt()
+                }else{
                     collectCalibrationCorners(inputMat)
-                    // attempt to collect this frame marker data for eventual calibration.
+                    Log.v(ArucoSLAMCameraActivityTag, "Collecting corner request sent")
                 }
+
+                discardCounter = 50
                 return inputMat
             } else {
 
@@ -205,17 +197,20 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                 }
                 val result: Mat = cachedResultMat!!
 
-
+                Log.v(ArucoSLAMCameraActivityTag, "we have camera matrix and dist coeffs")
+                Log.v(ArucoSLAMCameraActivityTag, "started to process camera frame...")
                 processCameraFrame(
-                    dictionary,
                     cameraMatrix!!.nativeObjAddr,
                     distCoeffs!!.nativeObjAddr,
                     inputMat.nativeObjAddr,
                     result.nativeObjAddr
                 )
+                Log.v(ArucoSLAMCameraActivityTag, "frame processed!")
                 return result
+//                return inputMat
             }
         } else {
+            Log.v(ArucoSLAMCameraActivityTag, "inputFrame is null, returning null to view")
             return null
         }
 
