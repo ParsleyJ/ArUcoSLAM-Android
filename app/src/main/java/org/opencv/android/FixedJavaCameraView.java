@@ -66,8 +66,8 @@ public class FixedJavaCameraView extends FixedCameraBridgeViewBase implements Pr
         super(context, attrs);
     }
 
-    protected boolean initializeCamera(int width, int height) {
-        Log.d(TAG, "Initialize java camera, "+width+" x "+height);
+    protected boolean initializeCamera(int viewWidth, int viewHeight) {
+        Log.d(TAG, "Initialize java camera, "+viewWidth+" x "+viewHeight);
         boolean result = true;
         synchronized (this) {
             mCamera = null;
@@ -144,7 +144,7 @@ public class FixedJavaCameraView extends FixedCameraBridgeViewBase implements Pr
 
                 if (sizes != null) {
                     /* Select the size that fits surface considering maximum size allowed */
-                    Size frameSize = calculateCameraFrameSize(sizes, new JavaCameraSizeAccessor(), width, height);
+                    Size frameSize = calculateCameraFrameSize(sizes, new JavaCameraSizeAccessor(), viewWidth, viewHeight);
 
                     /* Image format NV21 causes issues in the Android emulators */
                     if (Build.FINGERPRINT.startsWith("generic")
@@ -179,12 +179,14 @@ public class FixedJavaCameraView extends FixedCameraBridgeViewBase implements Pr
                     mFrameWidth = params.getPreviewSize().width;
                     mFrameHeight = params.getPreviewSize().height;
 
-//                    if ((getLayoutParams().width == LayoutParams.MATCH_PARENT) && (getLayoutParams().height == LayoutParams.MATCH_PARENT))
-//                        mScale = Math.min(((float)height)/mFrameHeight, ((float)width)/mFrameWidth);
+//                    if ((getLayoutParams().viewWidth == LayoutParams.MATCH_PARENT) && (getLayoutParams().viewHeight == LayoutParams.MATCH_PARENT))
+//                        mScale = Math.min(((float)viewHeight)/mFrameHeight, ((float)viewWidth)/mFrameWidth);
 //                    else
 //                        mScale = 0;
 
-                    mScale = Math.max(((float)height)/mFrameHeight, ((float)width)/mFrameWidth);
+                    mScale = Math.min(((float)viewWidth)/mFrameHeight, ((float)viewHeight)/mFrameWidth);
+
+                    Log.i(TAG, "mScale=" + mScale);
 
                     if (mFpsMeter != null) {
                         mFpsMeter.setResolution(mFrameWidth, mFrameHeight);

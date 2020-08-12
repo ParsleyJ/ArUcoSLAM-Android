@@ -19,5 +19,13 @@ public class NativeMethods {
     );
 
 
+    public static native void processCameraFrame(
+            long cameraMatrixAddr,
+            long distCoeffsAddr,
+            long inputMatAddr,
+            long resultMatAddr,
+            double[] outRvect,
+            double[] outTvect
+    );
 
 }

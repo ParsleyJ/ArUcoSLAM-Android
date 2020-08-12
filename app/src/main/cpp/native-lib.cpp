@@ -3,6 +3,7 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/aruco.hpp>
+#include <opencv2/calib3d.hpp>
 #include <android/log.h>
 #include <cmath>
 
@@ -60,15 +61,16 @@ Java_parsleyj_arucoslam_MainActivity_genCalibrationBoard(JNIEnv *env, jobject th
 
 
 
+
 extern "C"
 JNIEXPORT void JNICALL
-Java_parsleyj_arucoslam_MainActivity_processCameraFrame(
-        JNIEnv *env,
-        jobject thiz,
+Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(JNIEnv *env, jclass clazz,
         jlong cameraMatrixAddr,
         jlong distCoeffsAddr,
         jlong input_mat_addr,
-        jlong result_mat_addr
+        jlong result_mat_addr,
+        jdoubleArray outrvec,
+        jdoubleArray outtvec
 ) {
     auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
     cv::Mat inputMat = *castToMatPtr(input_mat_addr);
@@ -76,30 +78,26 @@ Java_parsleyj_arucoslam_MainActivity_processCameraFrame(
     cv::Mat cameraMatrix = *castToMatPtr(cameraMatrixAddr);
     cv::Mat distCoeffs = *castToMatPtr(distCoeffsAddr);
 
+    std::ostringstream a;
+    a << cameraMatrix << std::endl;
+    __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
+                        "cameraMatrix == %s", a.str().c_str());
 
     std::vector<cv::Mat> channels(3);
     cv::split(inputMat, channels);
-//    cv::Mat tmp;
-//    tmp = channels[0];
-//    channels[0] = channels[1];
-//    channels[1] = channels[2];
-//    channels[2] = tmp;
+    
     cv::merge(channels, resultMat);
 
-
-//    resultMat = inputMat; //apparently does not work
-//    inputMat.copyTo(resultMat); //apparently does not work
-//    cv::Mat tmpMat(inputMat.rows, inputMat.cols, CV_32FC3);
     cv::cvtColor(inputMat, inputMat, CV_RGBA2RGB);
     std::vector<int> ids;
     std::vector<std::vector<cv::Point2f>> corners;
 
-
-    __android_log_print(ANDROID_LOG_DEBUG, "AAAAAAAAAAAAAAAAA",
+    __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
                         "inputMat.channels() == %d", inputMat.channels());
-    cv::aruco::detectMarkers(inputMat, dictionary, corners, ids);
+    cv::aruco::detectMarkers(inputMat, dictionary, corners, ids,
+            cv::aruco::DetectorParameters::create(), cv::noArray(), cameraMatrix, distCoeffs);
 
-    __android_log_print(ANDROID_LOG_DEBUG, "AAAAAAAAAAAAAAAAA",
+    __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
                         "detectedMarkers == %d", ids.size());
 
     cv::Mat tmpMat;
@@ -107,7 +105,7 @@ Java_parsleyj_arucoslam_MainActivity_processCameraFrame(
     cv::cvtColor(resultMat, tmpMat, CV_RGBA2RGB);
 
     if (!ids.empty()) {
-        __android_log_print(ANDROID_LOG_DEBUG, "AAAAAAAAAAAAAAAAA",
+        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
                             "DRAWING DETECTORS");
         cv::aruco::drawDetectedMarkers(tmpMat, corners, ids);
     }
@@ -115,22 +113,30 @@ Java_parsleyj_arucoslam_MainActivity_processCameraFrame(
 //
     std::vector<cv::Vec3d> rvecs, tvecs;
     cv::aruco::estimatePoseSingleMarkers(
-            corners, 0.05, cameraMatrix, distCoeffs, rvecs, tvecs);
+            corners, 0.08, cameraMatrix, distCoeffs, rvecs, tvecs);
     for (int i = 0; i < rvecs.size(); i++) {
         auto rvec = rvecs[i];
         auto tvec = tvecs[i];
-        cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs, rvec, tvec, 0.1);
+
+        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
+                            "RVEC = [%f, %f, %f]", rvec[0], rvec[1], rvec[2]);
+        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
+                            "TVEC = [%f, %f, %f]", tvec[0], tvec[1], tvec[2]);
+        if(i==0){
+            for(int vi = 0; vi < 3; vi++) {
+                env->SetDoubleArrayRegion(outrvec, vi, 1, &rvec[vi]);
+                env->SetDoubleArrayRegion(outtvec, vi, 1, &tvec[vi]);
+            }
+        }
+        cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs, rvec, tvec, 0.05);
     }
 
     cv::cvtColor(tmpMat, resultMat, CV_RGB2RGBA);
 
-    __android_log_print(ANDROID_LOG_VERBOSE, "AAAAAAAAAAAAAAAAA",
+    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib:processCameraFrame",
                         "resultMat.size() == %d x %d", resultMat.size().width,
                         resultMat.size().height);
 }
-
-
-
 
 
 extern "C"
@@ -198,6 +204,9 @@ Java_parsleyj_arucoslam_NativeMethods_detectCalibrationCorners(
                         "Populated size");
     return ids.size();
 }
+
+
+
 extern "C"
 JNIEXPORT jdouble JNICALL
 Java_parsleyj_arucoslam_NativeMethods_calibrate(
@@ -212,6 +221,7 @@ Java_parsleyj_arucoslam_NativeMethods_calibrate(
 
     auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
     cv::Ptr<cv::aruco::GridBoard> gridboard = cv::aruco::GridBoard::create(
+            //TODO getParamsForOutside
 //            markersX,
 //            markersY,
 //            markerLength,
@@ -262,19 +272,13 @@ Java_parsleyj_arucoslam_NativeMethods_calibrate(
     }
 
     cv::Size imgSize(size_cols, size_rows);
-
-
     if (allIds.empty()) {
         __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp",
                             "Not enough captures for calibration");
         return 0.0;
     }
-
-
     std::vector<cv::Mat> rvecs, tvecs;
     double repError;
-
-
     // prepare data for calibration
     std::vector<std::vector<cv::Point2f>> allCornersConcatenated;
     std::vector<int> allIdsConcatenated;
@@ -300,7 +304,7 @@ Java_parsleyj_arucoslam_NativeMethods_calibrate(
             *castToMatPtr(resultAddresses[1]),
             rvecs,
             tvecs,
-            0);
+            CV_CALIB_RATIONAL_MODEL);
 
 
     return repError;

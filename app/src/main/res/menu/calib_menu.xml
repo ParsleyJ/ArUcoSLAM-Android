@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_restart_calibration"
+        android:icon="@drawable/ic_repeat_white_24dp"
+        app:showAsAction="ifRoom"
+        android:title="Restart">
+    </item>
+    <item
+        android:id="@+id/action_accept_calibration"
+        android:icon="@drawable/ic_check_circle_white_24dp"
+        app:showAsAction="always"
+        android:title="Accept">
+    </item>
+</menu>
