@@ -19,4 +19,6 @@
         opencv:show_fps="true"
         opencv:camera_id="any" />
 
+
+
 </RelativeLayout>

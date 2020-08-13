@@ -13,6 +13,7 @@ public class NativeMethods {
     public static native double calibrate(
             float[][][] collectedCorners,
             int[][] vectors,
+            boolean refine,
             int sizeRows,
             int sizeCols,
             long[] resultsAddresses

@@ -19,4 +19,14 @@
         opencv:show_fps="true"
         opencv:camera_id="any" />
 
+
+    <android.support.design.widget.FloatingActionButton
+        android:id="@+id/snap_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|right"
+        android:clickable="true"
+        opencv:srcCompat="@drawable/ic_radio_button_checked_white_24dp"
+        android:focusable="true" />
+
 </RelativeLayout>

@@ -27,11 +27,16 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
         // is discarded.
         const val requiredMarkerCountForCalibrationStep = 30
 
-        // need to collect marker data from 3 (good) frames before calibration.
-        const val requiredFramesForCalibration = 4
+        // need to collect marker data from 8 (good) frames before calibration.
+        const val requiredFramesForCalibration = 8
 
         const val TAG = "CalibActivity"
 
+        val currentlyFoundMatrix = doubleArrayOf(
+            1040.906372070312, 0.0, 0.0,
+            0.0, 162.9655609130859, 0.0,
+            0.0, 0.0, 1.0
+        )
 
     }
 
@@ -44,6 +49,7 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
     private var distCoeffs by CRCCheckedMat {
         PersistentCameraParameters.retrieveSavedDistCoefficients(this@CalibActivity)
     }
+    private var reprErr = Double.NaN
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,13 +64,20 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
         calibCamera.setCvCameraViewListener(this)
         calibCamera.setMaxFrameSize(2000, 2000)
         setTitle("Camera Calibration")
+        snap_button.setOnClickListener {
+            synchronized(this@CalibActivity){
+                pickThisFrame = true
+            }
+        }
     }
 
     override fun onResume() {
         super.onResume()
         OpenCVLoader.initDebug()
         Log.i(TAG, "OpenCV loaded successfully")
-        PersistentCameraParameters.loadCameraParameters(applicationContext)
+        val (mat, dist) = PersistentCameraParameters.loadCameraParameters(applicationContext)
+        cameraMatrix = mat
+        distCoeffs = dist
         System.loadLibrary("gnustl_shared")
         System.loadLibrary("native-lib")
         System.loadLibrary("nonfree")
@@ -82,10 +95,21 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
         when (item.itemId) {
             R.id.action_accept_calibration -> {
                 if(cameraMatrix!=null && distCoeffs!=null){
-                    Toast.makeText(this@CalibActivity, "NOT CALIBRATED YET!", Toast.LENGTH_SHORT).show()
-                }else {
+                    PersistentCameraParameters.saveCameraParameters(
+                        applicationContext,
+                        cameraMatrix,
+                        distCoeffs
+                    )
+                        .invokeOnCompletion {
+                            guiExec {
+                                Toast.makeText(this@CalibActivity, "SAVED!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+
                     this@CalibActivity.setResult(Activity.RESULT_OK)
                     this@CalibActivity.finish()
+                }else {
+                    Toast.makeText(this@CalibActivity, "NOT CALIBRATED YET!", Toast.LENGTH_SHORT).show()
                 }
                 true
             }
@@ -93,6 +117,7 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
                 cameraMatrix = null
                 distCoeffs = null
                 frameStream = null
+                reprErr = Double.NaN
                 discardCounter = 50
                 collectedCorners.clear()
                 collectedIds.clear()
@@ -144,30 +169,40 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
     }
 
     private fun calibrateAttempt() = backgroundExec {
+        calibCamera.disableView()
         synchronized(this) {
-            val camMat = Mat()
-            val distMat = Mat()
-            NativeMethods.calibrate(
+//            val camMat = Mat(3, 3, CvType.CV_64FC1, doubleArrayOf(
+//                imgSize.width, 0.0, 0.0,
+//                0.0, imgSize.height, 0.0,
+//                0.0, 0.0, 1.0
+//            ).asDoubleBuffer().copyToNewByteBuffer())
+
+
+            var refine = false
+            val (camMat, distMat) = if(cameraMatrix == null||distCoeffs==null) {
+                Mat() to Mat()
+            }else{
+                refine = true
+                cameraMatrix!! to distCoeffs!!
+            }
+
+            val reprErr = NativeMethods.calibrate(
                 collectedCorners.toTypedArray(),
                 collectedIds.toTypedArray(),
-                imgSize.width.toInt(),
+                refine,
                 imgSize.height.toInt(),
+                imgSize.width.toInt(),
                 longArrayOf(camMat.nativeObjAddr, distMat.nativeObjAddr)
             )
             cameraMatrix = camMat
             distCoeffs = distMat
+            this.reprErr = reprErr
+        }
+        calibCamera.enableView()
+        guiExec {
+            Toast.makeText(this@CalibActivity, "CALIBRATED!", Toast.LENGTH_SHORT).show()
         }
 
-        PersistentCameraParameters.saveCameraParameters(
-            applicationContext,
-            cameraMatrix,
-            distCoeffs
-        )
-            .invokeOnCompletion {
-                guiExec {
-                    Toast.makeText(this@CalibActivity, "CALIBRATED!", Toast.LENGTH_SHORT).show()
-                }
-            }
 
         Log.i(TAG, "cameraMatrix = " + cameraMatrix!!)
         Log.i(TAG, "distCoeffs   = " + distCoeffs!!)
@@ -186,6 +221,8 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
     private fun countFrame(): Long {
         return frameCounter++
     }
+
+    private var pickThisFrame = false
 
     var frameStream: FrameStream? = null
     private var discardCounter = 50
@@ -209,14 +246,29 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
                 if (collectedIds.size >= requiredFramesForCalibration) {
                     Log.v(MainActivity.TAG, "Starting calibration attempt")
                     calibrateAttempt()
-                } else {
+                    discardCounter = 50
+                } else if (synchronized(this){pickThisFrame}) {
+                    synchronized(this){
+                        pickThisFrame = false
+                    }
                     collectCalibrationCorners(inputMat)
                     Log.v(MainActivity.TAG, "Collecting corner request sent")
                 }
 
-                discardCounter = 50
                 return inputMat
             } else {
+
+                if(synchronized(this){pickThisFrame}){
+                    synchronized(this){
+                        pickThisFrame = false
+                    }
+                    collectCalibrationCorners(inputMat)
+                    Log.v(MainActivity.TAG, "Collecting corner request sent")
+                    calibrateAttempt()
+                }
+
+
+
                 if (frameStream == null) {
                     Log.v(MainActivity.TAG, "we have camera matrix and dist coeffs")
                     Log.v(MainActivity.TAG, "started to process camera frame...")
@@ -235,8 +287,62 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
                         )
                         Log.v(MainActivity.TAG, "frame processed!")
 
+                        val camMat = cameraMatrix!!
+                        val distMat = distCoeffs!!
+
+                        Imgproc.putText(
+                            outMat,
+                            "[${camMat[0, 0][0].format(5)}, ${camMat[0, 1][0].format(5)}, ${camMat[0, 2][0].format(5)}",
+                            Point(30.0, 30.0),
+                            Core.FONT_HERSHEY_COMPLEX_SMALL,
+                            0.8,
+                            Scalar(255.0, 50.0, 50.0),
+                            1
+                        )
+
+                        Imgproc.putText(
+                            outMat,
+                            "${camMat[1, 0][0].format(5)}, ${camMat[1, 1][0].format(5)}, ${camMat[1, 2][0].format(5)}",
+                            Point(30.0, 50.0),
+                            Core.FONT_HERSHEY_COMPLEX_SMALL,
+                            0.8,
+                            Scalar(255.0, 50.0, 50.0),
+                            1
+                        )
+
+                        Imgproc.putText(
+                            outMat,
+                            "${camMat[2, 0][0].format(5)}, ${camMat[2, 1][0].format(5)}, ${camMat[2, 2][0].format(5)}]",
+                            Point(30.0, 70.0),
+                            Core.FONT_HERSHEY_COMPLEX_SMALL,
+                            0.8,
+                            Scalar(255.0, 50.0, 50.0),
+                            1
+                        )
+
+                        Imgproc.putText(
+                            outMat,
+                            "[${distMat[0, 0][0].format(5)}, ${distMat[0, 1][0].format(5)}, ${distMat[0, 2][0].format(5)}, " +
+                                    "${distMat[0, 3][0].format(5)}, ${distMat[0, 4][0].format(5)}]",
+                            Point(30.0, 90.0),
+                            Core.FONT_HERSHEY_COMPLEX_SMALL,
+                            0.8,
+                            Scalar(255.0, 50.0, 50.0),
+                            1
+                        )
+
+                        Imgproc.putText(
+                            outMat,
+                            "REPR_ERR = $reprErr",
+                            Point(30.0, 110.0),
+                            Core.FONT_HERSHEY_COMPLEX_SMALL,
+                            0.8,
+                            Scalar(255.0, 50.0, 50.0),
+                            1
+                        )
 
                     }
+
                 }
 
                 frameStream!!.supply(inputMat, countFrame())

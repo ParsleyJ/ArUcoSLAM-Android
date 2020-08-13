@@ -214,6 +214,7 @@ Java_parsleyj_arucoslam_NativeMethods_calibrate(
         jclass clazz,
         jobjectArray collected_corners,
         jobjectArray collectedIDs,
+        jboolean refine,
         jint size_rows,
         jint size_cols,
         jlongArray results_addresses
@@ -226,7 +227,7 @@ Java_parsleyj_arucoslam_NativeMethods_calibrate(
 //            markersY,
 //            markerLength,
 //            markerSeparation,
-            8, 5, 50, 20,
+            8, 5, 500, 100,
             dictionary
     ); // create aruco board
     auto board = gridboard.staticCast<cv::aruco::Board>();
@@ -304,7 +305,7 @@ Java_parsleyj_arucoslam_NativeMethods_calibrate(
             *castToMatPtr(resultAddresses[1]),
             rvecs,
             tvecs,
-            CV_CALIB_RATIONAL_MODEL);
+            refine? CV_CALIB_USE_INTRINSIC_GUESS : 0);
 
 
     return repError;
