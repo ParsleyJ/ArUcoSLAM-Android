@@ -35,6 +35,8 @@ public class NativeMethods {
             long distCoeffsAddr,
             long inputMatAddr,
             long resultMatAddr,
+            int maxMarkers,
+            int[] detectedIDsVect,
             double[] outRvect,
             double[] outTvect
     );

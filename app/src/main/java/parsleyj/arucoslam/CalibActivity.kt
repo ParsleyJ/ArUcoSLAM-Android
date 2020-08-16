@@ -121,7 +121,7 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
         R.id.action_restart_calibration -> {
             cameraMatrix = null
             distCoeffs = null
-            frameStream = null
+            frameStreamProcessor = null
             reprErr = Double.NaN
             discardCounter = 50
             collectedCorners.clear()
@@ -231,9 +231,9 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
     override fun onCameraViewStopped() {
     }
 
-
-    private var outRvec = doubleArrayOf(0.0, 0.0, 0.0)
-    private var outTvec = doubleArrayOf(0.0, 0.0, 0.0)
+    private var outIdsVec = IntArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT) { 0 }
+    private var outRvecs = DoubleArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT *3) {0.0}
+    private var outTvecs = DoubleArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT *3) {0.0}
     private var frameCounter = 0L
     private fun countFrame(): Long {
         return frameCounter++
@@ -241,7 +241,7 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
 
     private var pickThisFrame = false
 
-    var frameStream: FrameStream? = null
+    var frameStreamProcessor: FrameStreamProcessor? = null
     private var discardCounter = 50
 
     override fun onCameraFrame(inputFrame: FixedCameraBridgeViewBase.CvCameraViewFrame?): Mat? {
@@ -286,10 +286,10 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
 
 
 
-                if (frameStream == null) {
+                if (frameStreamProcessor == null) {
                     Log.v(MainActivity.TAG, "we have camera matrix and dist coeffs")
                     Log.v(MainActivity.TAG, "started to process camera frame...")
-                    frameStream = FrameStream(
+                    frameStreamProcessor = FrameStreamProcessor(
                         inputMat.size(),
                         inputMat.type(),
                         4 // number of parallel processors on frames
@@ -299,8 +299,10 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
                             distCoeffs!!.nativeObjAddr,
                             inMat.nativeObjAddr,
                             outMat.nativeObjAddr,
-                            outRvec,
-                            outTvec
+                            MainActivity.DETECTED_MARKERS_MAX_OUTPUT,
+                            outIdsVec,
+                            outRvecs,
+                            outTvecs
                         )
                         Log.v(MainActivity.TAG, "frame processed!")
 
@@ -370,9 +372,9 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
 
                 }
 
-                frameStream!!.supply(inputMat, countFrame())
-                Log.d(MainActivity.TAG, "FrameStream usage = ${frameStream!!.usage()}")
-                return frameStream!!.retrieve()
+                frameStreamProcessor!!.supply(inputMat, countFrame())
+                Log.d(MainActivity.TAG, "FrameStream usage = ${frameStreamProcessor!!.usage()}")
+                return frameStreamProcessor!!.retrieve()
             }
         } else {
             Log.v(MainActivity.TAG, "inputFrame is null, returning null to view")

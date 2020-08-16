@@ -73,8 +73,8 @@ object PersistentCameraParameters {
         synchronized(this) {
             editor.putFloat(CAMERA_MATRIX_F_X_KEY, camMat[0, 0][0].toFloat())
             editor.putFloat(CAMERA_MATRIX_F_Y_KEY, camMat[1, 1][0].toFloat())
-            editor.putFloat(CAMERA_MATRIX_C_X_KEY, camMat[2, 0][0].toFloat())
-            editor.putFloat(CAMERA_MATRIX_C_Y_KEY, camMat[2, 1][0].toFloat())
+            editor.putFloat(CAMERA_MATRIX_C_X_KEY, camMat[0, 2][0].toFloat())
+            editor.putFloat(CAMERA_MATRIX_C_Y_KEY, camMat[1, 2][0].toFloat())
             editor.putInt(DISTORTION_COEFFICIENTS_ARR_KEY + "_size", distMat.cols())
             for (i in 0 until distMat.cols()) {
                 editor.putFloat(

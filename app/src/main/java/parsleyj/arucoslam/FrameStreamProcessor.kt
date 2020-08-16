@@ -3,25 +3,27 @@ package parsleyj.arucoslam
 import org.opencv.core.Mat
 import org.opencv.core.Size
 
-class FrameStream(
+class FrameStreamProcessor(
     private val size: Size,
     private val frameType: Int,
     private val maxProcessors: Int,
     private val block: suspend (Mat, Mat) -> Unit
 ) {
     private var lastResult = Mat.zeros(size, frameType)
-    var lastResultToken = -1L
+    private var lastResultToken = -1L
     private val processors = mutableListOf<FrameProcessor>()
 
     fun supply(input: Mat?, token: Long) {
         // if there are no free processors, discard the frame
         val proc = getFreeProcessor() ?: return
         proc.assignFrame(input, token)
-        proc.compute()
+        backgroundExec {
+            proc.compute()
+        }
     }
 
     fun usage(): Double {
-        return processors.size.toDouble() / maxProcessors.toDouble()
+        return (processors.filter{it.isBusy()}.count().toDouble() / maxProcessors.toDouble()) * 100.0
     }
 
     fun retrieve(): Mat {
@@ -40,8 +42,8 @@ class FrameStream(
             return frameProcessor
         }
 
-
         sortProcessors()
+
         return if (processors.first().isBusy()) {
             // if the first one is busy, all of them are.
             // let's try to instantiate one processor
@@ -69,7 +71,7 @@ class FrameStream(
             block, // what to do on the frame
             onDone = { // what to do at the end
                 //  (sets as last result if the order is correct)
-                synchronized(this@FrameStream) {
+                synchronized(this@FrameStreamProcessor) {
                     if (lastResultToken < orderToken) {
                         lastResult = retrieveResult()
                         lastResultToken = orderToken

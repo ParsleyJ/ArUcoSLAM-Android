@@ -27,7 +27,7 @@ class FrameProcessor(
         this.onDone()
     }
 
-    fun compute() {
+    suspend fun compute() {
         currentJob = backgroundExec {
             val inMat = inputMat
             if (inMat == null) {

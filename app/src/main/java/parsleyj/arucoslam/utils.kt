@@ -70,3 +70,5 @@ fun newByteBuffer(paramInt: Int): ByteBuffer {
 
 
 fun Double.format(digits: Int) = "%.${digits}f".format(this)
+
+fun Double.format(digits: Int, maxWidth: Int) = "%${maxWidth}.${digits}f".format(this)

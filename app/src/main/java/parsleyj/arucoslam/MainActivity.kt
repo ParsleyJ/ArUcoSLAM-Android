@@ -21,6 +21,7 @@ import org.opencv.core.Mat
 import org.opencv.core.Point
 import org.opencv.core.Scalar
 import org.opencv.imgproc.Imgproc.putText
+import kotlin.math.roundToLong
 
 
 class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraViewListener2 {
@@ -28,6 +29,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     companion object {
         const val TAG = "MainActivity"
         const val CALIBRATION_REQUEST = 1
+        const val DETECTED_MARKERS_MAX_OUTPUT = 50
 
     }
 
@@ -128,10 +130,12 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     override fun onCameraViewStopped() {
 
     }
-    private var outRvec = doubleArrayOf(0.0, 0.0, 0.0)
 
 
-    private var outTvec = doubleArrayOf(0.0, 0.0, 0.0)
+    private var outIdsVec = IntArray(DETECTED_MARKERS_MAX_OUTPUT) { 0 }
+    private var outRvecs = DoubleArray(DETECTED_MARKERS_MAX_OUTPUT*3) {0.0}
+    private var outTvecs = DoubleArray(DETECTED_MARKERS_MAX_OUTPUT*3) {0.0}
+
     private var frameCounter = 0L
 
     private fun countFrame(): Long {
@@ -139,7 +143,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     }
 
 
-    var frameStream: FrameStream? = null
+    var frameStreamProcessor: FrameStreamProcessor? = null
 
 
     override fun onCameraFrame(inputFrame: FixedCameraBridgeViewBase.CvCameraViewFrame?): Mat? {
@@ -152,34 +156,36 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
             if (camMatrix == null || camDistCoeffs == null) {
                 Log.v(TAG, "camera matrix and dist coeffs are null")
             } else {
-                if (frameStream == null) {
+                if (frameStreamProcessor == null) {
                     Log.v(TAG, "we have camera matrix and dist coeffs")
                     Log.v(TAG, "started to process camera frame...")
-                    val inMat = inputMat
-                    val outMat = Mat.zeros(inMat.size(), inMat.type())
-//                    frameStream = FrameStream(
-//                        inputMat.size(),
-//                        inputMat.type(),
-//                        2 // number of parallel processors on frames
-//                    ) { inMat, outMat ->
+//                    val inMat = inputMat
+//                    val outMat = Mat.zeros(inMat.size(), inMat.type())
+                    frameStreamProcessor = FrameStreamProcessor(
+                        inputMat.size(),
+                        inputMat.type(),
+                        2 // number of parallel processors on frames
+                    ) { inMat, outMat ->
                         NativeMethods.processCameraFrame(
                             cameraMatrix!!.nativeObjAddr,
                             distCoeffs!!.nativeObjAddr,
                             inMat.nativeObjAddr,
                             outMat.nativeObjAddr,
-                            outRvec,
-                            outTvec
+                            DETECTED_MARKERS_MAX_OUTPUT,
+                            outIdsVec,
+                            outRvecs,
+                            outTvecs
                         )
                         Log.v(TAG, "frame processed!")
 
                         putText(
                             outMat,
                             "RVECT(${
-                            outRvec[0].format(5)
-                            }, ${
-                            outRvec[1].format(5)
-                            }, ${
-                            outRvec[2].format(5)
+                            (outRvecs[0] * 180.0 / Math.PI).roundToLong().toDouble().format(0, 4)
+                            },${
+                            (outRvecs[1] * 180.0 / Math.PI).roundToLong().toDouble().format(0, 4)
+                            },${
+                            (outRvecs[2] * 180.0 / Math.PI).roundToLong().toDouble().format(0, 4)
                             })",
                             Point(30.0, 30.0),
                             FONT_HERSHEY_COMPLEX_SMALL,
@@ -191,11 +197,11 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                         putText(
                             outMat,
                             "TVECT(${
-                            (outTvec[0] * calibSizeRatio).format(5)
-                            }, ${
-                            (outTvec[1] * calibSizeRatio).format(5)
-                            } ,${
-                            (outTvec[2] * calibSizeRatio).format(5)
+                            (outTvecs[0] * calibSizeRatio).format(7, 5)
+                            },${
+                            (outTvecs[1] * calibSizeRatio).format(7, 5)
+                            },${
+                            (outTvecs[2] * calibSizeRatio).format(7, 5)
                             })",
                             Point(30.0, 50.0),
                             FONT_HERSHEY_COMPLEX_SMALL,
@@ -203,13 +209,23 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                             Scalar(255.0, 50.0, 50.0),
                             1
                         )
-//                    }
-                    return outMat
+
+                        putText(
+                            outMat,
+                            "ID = ${outIdsVec[0]}",
+                            Point(30.0, 70.0),
+                            FONT_HERSHEY_COMPLEX_SMALL,
+                            0.8,
+                            Scalar(255.0, 50.0, 50.0),
+                            1
+                        )
+                    }
+//                    return outMat
                 }
 
-//                frameStream!!.supply(inputMat, countFrame())
-//                Log.d(TAG, "FrameStream usage = ${frameStream!!.usage()}")
-//                return frameStream!!.retrieve()
+                frameStreamProcessor!!.supply(inputMat, countFrame())
+                Log.d(TAG, "FrameStream usage = ${frameStreamProcessor!!.usage()}")
+                return frameStreamProcessor!!.retrieve()
             }
             return inputMat
         } else {
