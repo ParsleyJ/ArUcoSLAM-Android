@@ -16,6 +16,7 @@ import kotlinx.android.synthetic.main.activity_main.*
 import org.opencv.android.FixedCameraBridgeViewBase
 import org.opencv.android.OpenCVLoader
 import org.opencv.core.Core.FONT_HERSHEY_COMPLEX_SMALL
+import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.Point
 import org.opencv.core.Scalar
@@ -38,7 +39,23 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     private var distCoeffs by CRCCheckedMat {
         PersistentCameraParameters.retrieveSavedDistCoefficients(applicationContext)
     }
+    private val calibSizeRatio = (480.0 / 720.0)//(864.0 / 1280.0)
 
+    fun setFoundCamParams(){
+        cameraMatrix = Mat(3,3, CvType.CV_64FC1, doubleArrayOf(
+            1032.8829095671827, 0.0, 633.4940320469335*calibSizeRatio,
+            0.0, 1031.2002634811117, 353.94940985894704*calibSizeRatio,
+            0.0, 0.0, 1.0
+        ).asDoubleBuffer().copyToNewByteBuffer())
+        distCoeffs = Mat(1, 5, CvType.CV_64FC1, doubleArrayOf(
+            0.138768877522313,
+            -0.6601745137551255,
+            -0.0007624348695516956,
+            -0.000016450434278321715,
+            0.819925063225912
+        ).asDoubleBuffer().copyToNewByteBuffer())
+        PersistentCameraParameters.saveCameraParameters(this, cameraMatrix, distCoeffs)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,11 +72,14 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     }
 
 
+
+
     override fun onResume() {
         super.onResume()
         OpenCVLoader.initDebug()
         Log.i(TAG, "OpenCV loaded successfully")
-        setCameraParameters(PersistentCameraParameters.loadCameraParameters(applicationContext))
+        setFoundCamParams()
+//        setCameraParameters(PersistentCameraParameters.loadCameraParameters(applicationContext))
         System.loadLibrary("gnustl_shared")
         System.loadLibrary("native-lib")
         System.loadLibrary("nonfree")
@@ -121,6 +141,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
 
     var frameStream: FrameStream? = null
 
+
     override fun onCameraFrame(inputFrame: FixedCameraBridgeViewBase.CvCameraViewFrame?): Mat? {
         if (inputFrame != null) {
             Log.v(TAG, "inputFrame != null")
@@ -134,11 +155,13 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                 if (frameStream == null) {
                     Log.v(TAG, "we have camera matrix and dist coeffs")
                     Log.v(TAG, "started to process camera frame...")
-                    frameStream = FrameStream(
-                        inputMat.size(),
-                        inputMat.type(),
-                        4 // number of parallel processors on frames
-                    ) { inMat, outMat ->
+                    val inMat = inputMat
+                    val outMat = Mat.zeros(inMat.size(), inMat.type())
+//                    frameStream = FrameStream(
+//                        inputMat.size(),
+//                        inputMat.type(),
+//                        2 // number of parallel processors on frames
+//                    ) { inMat, outMat ->
                         NativeMethods.processCameraFrame(
                             cameraMatrix!!.nativeObjAddr,
                             distCoeffs!!.nativeObjAddr,
@@ -151,9 +174,13 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
 
                         putText(
                             outMat,
-                            "RVECT(${outRvec[0].format(5)}, ${outRvec[1].format(5)}, ${outRvec[2].format(
-                                5
-                            )})",
+                            "RVECT(${
+                            outRvec[0].format(5)
+                            }, ${
+                            outRvec[1].format(5)
+                            }, ${
+                            outRvec[2].format(5)
+                            })",
                             Point(30.0, 30.0),
                             FONT_HERSHEY_COMPLEX_SMALL,
                             0.8,
@@ -163,21 +190,26 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
 
                         putText(
                             outMat,
-                            "TVECT(${outTvec[0].format(5)}, ${outTvec[1].format(5)} ,${outTvec[2].format(
-                                5
-                            )})",
+                            "TVECT(${
+                            (outTvec[0] * calibSizeRatio).format(5)
+                            }, ${
+                            (outTvec[1] * calibSizeRatio).format(5)
+                            } ,${
+                            (outTvec[2] * calibSizeRatio).format(5)
+                            })",
                             Point(30.0, 50.0),
                             FONT_HERSHEY_COMPLEX_SMALL,
                             0.8,
                             Scalar(255.0, 50.0, 50.0),
                             1
                         )
-                    }
+//                    }
+                    return outMat
                 }
 
-                frameStream!!.supply(inputMat, countFrame())
-                Log.d(TAG, "FrameStream usage = ${frameStream!!.usage()}")
-                return frameStream!!.retrieve()
+//                frameStream!!.supply(inputMat, countFrame())
+//                Log.d(TAG, "FrameStream usage = ${frameStream!!.usage()}")
+//                return frameStream!!.retrieve()
             }
             return inputMat
         } else {

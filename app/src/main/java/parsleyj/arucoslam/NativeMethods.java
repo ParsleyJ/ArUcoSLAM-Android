@@ -12,13 +12,23 @@ public class NativeMethods {
 
     public static native double calibrate(
             float[][][] collectedCorners,
-            int[][] vectors,
-            boolean refine,
+            int[][] idsVect,
             int sizeRows,
             int sizeCols,
-            long[] resultsAddresses
+            long camMatrixAddr,
+            long distCoeffsAddr
     );
 
+
+    public static native double calibrateChArUco(
+            float[][][] collectedCorners,
+            int[][] idsVect,
+            long[] collectedFrames,
+            int sizeRows,
+            int sizeCols,
+            long camMatrixAddr,
+            long distCoeffsAddr
+    );
 
     public static native void processCameraFrame(
             long cameraMatrixAddr,
