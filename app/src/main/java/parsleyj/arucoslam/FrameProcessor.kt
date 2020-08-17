@@ -7,7 +7,7 @@ import org.opencv.core.Size
 class FrameProcessor(
     frameSize: Size,
     frameType: Int,
-    val block: suspend (Mat, Mat) -> Unit,
+    val block: suspend (Mat, Mat, IntArray, DoubleArray, DoubleArray) -> Unit,
     val onDone: FrameProcessor.() -> Unit
 ) {
     private val resultMat: Mat =
@@ -15,6 +15,11 @@ class FrameProcessor(
     private var inputMat: Mat? = null
     var orderToken = -1L
     private var currentJob: Job? = null
+
+    private var idsVec = IntArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT) { 0 }
+    private var rvecs = DoubleArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT * 3) { 0.0 }
+    private var tvecs = DoubleArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT * 3) { 0.0 }
+
 
     fun assignFrame(inputMat: Mat?, token: Long) {
         if (inputMat != null) {
@@ -27,20 +32,21 @@ class FrameProcessor(
         this.onDone()
     }
 
-    suspend fun compute() {
+    suspend fun compute() :Job? {
         currentJob = backgroundExec {
             val inMat = inputMat
             if (inMat == null) {
                 done()
             } else {
                 try {
-                    block(inMat, resultMat)
+                    block(inMat, resultMat, idsVec, rvecs, tvecs)
                 } catch (e: Throwable) {
                     e.printStackTrace()
                 }
                 done()
             }
         }
+        return currentJob
     }
 
 

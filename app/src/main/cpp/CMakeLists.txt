@@ -8,6 +8,9 @@ cmake_minimum_required(VERSION 3.4.1)
 set(pathToProject /Users/pj/AndroidStudioProjects/ArucoSLAM)
 set(pathToOpenCv /Users/pj/APMS/OpenCV-android-sdk)
 
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z -Wall")
+
 # Creates and names a library, sets it as either STATIC
 # or SHARED, and provides the relative paths to its source code.
 # You can define multiple libraries, and CMake builds them for you.

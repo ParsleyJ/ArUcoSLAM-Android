@@ -7,4 +7,10 @@
         app:showAsAction="always"
         android:title="Start Calibration">
     </item>
+    <item
+        android:id="@+id/action_run_gc"
+        android:icon="@drawable/ic_repeat_white_24dp"
+        app:showAsAction="always"
+        android:title="Run GC">
+    </item>
 </menu>

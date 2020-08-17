@@ -231,9 +231,6 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
     override fun onCameraViewStopped() {
     }
 
-    private var outIdsVec = IntArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT) { 0 }
-    private var outRvecs = DoubleArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT *3) {0.0}
-    private var outTvecs = DoubleArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT *3) {0.0}
     private var frameCounter = 0L
     private fun countFrame(): Long {
         return frameCounter++
@@ -293,7 +290,7 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
                         inputMat.size(),
                         inputMat.type(),
                         4 // number of parallel processors on frames
-                    ) { inMat, outMat ->
+                    ) { inMat, outMat, outIdsVec, outRvecs, outTvecs ->
                         NativeMethods.processCameraFrame(
                             cameraMatrix!!.nativeObjAddr,
                             distCoeffs!!.nativeObjAddr,

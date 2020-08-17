@@ -30,15 +30,30 @@ public class NativeMethods {
             long distCoeffsAddr
     );
 
-    public static native void processCameraFrame(
+    public static native int processCameraFrame(
             long cameraMatrixAddr,
             long distCoeffsAddr,
             long inputMatAddr,
             long resultMatAddr,
             int maxMarkers,
             int[] detectedIDsVect,
-            double[] outRvect,
-            double[] outTvect
+            double[] outRvects,
+            double[] outTvects
+    );
+
+    public static native int estimateCameraPosition(
+            long cameraMatrixAddr,
+            long distCoeffsAddr,
+            long inputMatAddr,
+            int[] fixedMarkers,
+            double[] fixedRVects,
+            double[] fixedTVects,
+            int[] inMarkers,
+            double[] inRvects,
+            double[] inTvects,
+            double[] previous2dPositions,
+            double[] previous2dOrientations,
+            double[] newPosition
     );
 
 }

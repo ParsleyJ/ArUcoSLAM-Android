@@ -1,5 +1,7 @@
 package parsleyj.arucoslam
 
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import org.opencv.core.Mat
 import org.opencv.core.Size
 
@@ -7,23 +9,32 @@ class FrameStreamProcessor(
     private val size: Size,
     private val frameType: Int,
     private val maxProcessors: Int,
-    private val block: suspend (Mat, Mat) -> Unit
+    private val jobTimeout: Long = 1000L,
+    private val block: suspend (Mat, Mat, IntArray, DoubleArray, DoubleArray) -> Unit
 ) {
     private var lastResult = Mat.zeros(size, frameType)
     private var lastResultToken = -1L
     private val processors = mutableListOf<FrameProcessor>()
 
+
     fun supply(input: Mat?, token: Long) {
-        // if there are no free processors, discard the frame
-        val proc = getFreeProcessor() ?: return
-        proc.assignFrame(input, token)
-        backgroundExec {
-            proc.compute()
+        // if there are no free processors, do not process the frame.
+        val proc = getFreeProcessor()
+        if (proc == null) {
+            lastResult = input
+        } else {
+            proc.assignFrame(input, token)
+            backgroundExec {
+                val job = proc.compute()
+                delay(jobTimeout)
+                job?.cancel()
+            }
         }
     }
 
     fun usage(): Double {
-        return (processors.filter{it.isBusy()}.count().toDouble() / maxProcessors.toDouble()) * 100.0
+        return (processors.filter { it.isBusy() }.count()
+            .toDouble() / maxProcessors.toDouble()) * 100.0
     }
 
     fun retrieve(): Mat {

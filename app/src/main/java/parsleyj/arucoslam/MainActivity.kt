@@ -12,6 +12,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.SurfaceView
 import android.view.WindowManager
+import android.widget.Toast
 import kotlinx.android.synthetic.main.activity_main.*
 import org.opencv.android.FixedCameraBridgeViewBase
 import org.opencv.android.OpenCVLoader
@@ -30,33 +31,54 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         const val TAG = "MainActivity"
         const val CALIBRATION_REQUEST = 1
         const val DETECTED_MARKERS_MAX_OUTPUT = 50
-
     }
 
     // since Android GC deletes underlying data in field Mats, i use this property delegator
     // to reload the correct data from storage when the mats become corrupt.
     private var cameraMatrix by CRCCheckedMat {
-        PersistentCameraParameters.retrieveSavedCameraMatrix(applicationContext)
+//        PersistentCameraParameters.retrieveSavedCameraMatrix(applicationContext)
+        getCameraMat()
     }
     private var distCoeffs by CRCCheckedMat {
-        PersistentCameraParameters.retrieveSavedDistCoefficients(applicationContext)
+//        PersistentCameraParameters.retrieveSavedDistCoefficients(applicationContext)
+        getDistCoeffsMat()
     }
+
+    //    private var cameraMatrix :Mat? = null
+//    private var distCoeffs :Mat? = null
     private val calibSizeRatio = (480.0 / 720.0)//(864.0 / 1280.0)
 
-    fun setFoundCamParams(){
-        cameraMatrix = Mat(3,3, CvType.CV_64FC1, doubleArrayOf(
-            1032.8829095671827, 0.0, 633.4940320469335*calibSizeRatio,
-            0.0, 1031.2002634811117, 353.94940985894704*calibSizeRatio,
-            0.0, 0.0, 1.0
-        ).asDoubleBuffer().copyToNewByteBuffer())
-        distCoeffs = Mat(1, 5, CvType.CV_64FC1, doubleArrayOf(
-            0.138768877522313,
-            -0.6601745137551255,
-            -0.0007624348695516956,
-            -0.000016450434278321715,
-            0.819925063225912
-        ).asDoubleBuffer().copyToNewByteBuffer())
+    private val arucoBoardFixedMarkers = arucoBoardFixedMarkers()
+    private val fixedMarkerIds = arucoBoardFixedMarkers.ids.toIntArray()
+    private val fixedMarkerRvects = arucoBoardFixedMarkers.rvecs.flattenVecs().toDoubleArray()
+    private val fixedMarkerTvects = arucoBoardFixedMarkers.tvecs.flattenVecs().toDoubleArray()
+
+    fun setFoundCamParams() {
+        cameraMatrix = getCameraMat()
+        distCoeffs = getDistCoeffsMat()
         PersistentCameraParameters.saveCameraParameters(this, cameraMatrix, distCoeffs)
+    }
+
+    fun getCameraMat(): Mat {
+        return Mat(
+            3, 3, CvType.CV_64FC1, doubleArrayOf(
+                1032.8829095671827, 0.0, 633.4940320469335 * calibSizeRatio,
+                0.0, 1031.2002634811117, 353.94940985894704 * calibSizeRatio,
+                0.0, 0.0, 1.0
+            ).asDoubleBuffer().copyToNewByteBuffer()
+        )
+    }
+
+    fun getDistCoeffsMat(): Mat {
+        return Mat(
+            1, 5, CvType.CV_64FC1, doubleArrayOf(
+                0.138768877522313,
+                -0.6601745137551255,
+                -0.0007624348695516956,
+                -0.000016450434278321715,
+                0.819925063225912
+            ).asDoubleBuffer().copyToNewByteBuffer()
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,8 +94,6 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         opencvCamera.setCvCameraViewListener(this)
         opencvCamera.setMaxFrameSize(2000, 2000)
     }
-
-
 
 
     override fun onResume() {
@@ -101,10 +121,18 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                 startActivityForResult(Intent(this, CalibActivity::class.java), CALIBRATION_REQUEST)
                 true
             }
+            R.id.action_run_gc -> {
+                guiExec {
+                    Toast.makeText(this, "" + distCoeffs?.dump(), Toast.LENGTH_SHORT).show()
+                    setFoundCamParams()
+                }
+
+                true
+            }
             else -> super.onOptionsItemSelected(item)
         }
 
-    private fun setCameraParameters(pair: Pair<Mat?, Mat?>){
+    private fun setCameraParameters(pair: Pair<Mat?, Mat?>) {
         val (cm, dcs) = pair
         cameraMatrix = cm
         distCoeffs = dcs
@@ -115,14 +143,18 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) =
         when (requestCode) {
             CALIBRATION_REQUEST -> {
-                setCameraParameters(PersistentCameraParameters.loadCameraParameters(applicationContext))
+                setCameraParameters(
+                    PersistentCameraParameters.loadCameraParameters(
+                        applicationContext
+                    )
+                )
             }
             else -> {
             }
         }
 
     override fun onCameraViewStarted(width: Int, height: Int) {
-        if(cameraMatrix == null || distCoeffs == null) {
+        if (cameraMatrix == null || distCoeffs == null) {
             startActivityForResult(Intent(this, CalibActivity::class.java), CALIBRATION_REQUEST)
         }
     }
@@ -132,9 +164,6 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     }
 
 
-    private var outIdsVec = IntArray(DETECTED_MARKERS_MAX_OUTPUT) { 0 }
-    private var outRvecs = DoubleArray(DETECTED_MARKERS_MAX_OUTPUT*3) {0.0}
-    private var outTvecs = DoubleArray(DETECTED_MARKERS_MAX_OUTPUT*3) {0.0}
 
     private var frameCounter = 0L
 
@@ -154,71 +183,91 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
             val camMatrix = cameraMatrix
             val camDistCoeffs = distCoeffs
             if (camMatrix == null || camDistCoeffs == null) {
-                Log.v(TAG, "camera matrix and dist coeffs are null")
+//                Log.v(TAG, "camera matrix and dist coeffs are null")
             } else {
                 if (frameStreamProcessor == null) {
-                    Log.v(TAG, "we have camera matrix and dist coeffs")
-                    Log.v(TAG, "started to process camera frame...")
+//                    Log.v(TAG, "we have camera matrix and dist coeffs")
+//                    Log.v(TAG, "started to process camera frame...")
 //                    val inMat = inputMat
 //                    val outMat = Mat.zeros(inMat.size(), inMat.type())
                     frameStreamProcessor = FrameStreamProcessor(
                         inputMat.size(),
                         inputMat.type(),
                         2 // number of parallel processors on frames
-                    ) { inMat, outMat ->
-                        NativeMethods.processCameraFrame(
-                            cameraMatrix!!.nativeObjAddr,
-                            distCoeffs!!.nativeObjAddr,
+                    ) { inMat, outMat, foundIDs, foundRvecs, foundTvecs ->
+                        val foundPoses = NativeMethods.processCameraFrame(
+                            camMatrix.nativeObjAddr,
+                            camDistCoeffs.nativeObjAddr,
                             inMat.nativeObjAddr,
                             outMat.nativeObjAddr,
                             DETECTED_MARKERS_MAX_OUTPUT,
-                            outIdsVec,
-                            outRvecs,
-                            outTvecs
+                            foundIDs,
+                            foundRvecs,
+                            foundTvecs
                         )
                         Log.v(TAG, "frame processed!")
 
-                        putText(
-                            outMat,
-                            "RVECT(${
-                            (outRvecs[0] * 180.0 / Math.PI).roundToLong().toDouble().format(0, 4)
-                            },${
-                            (outRvecs[1] * 180.0 / Math.PI).roundToLong().toDouble().format(0, 4)
-                            },${
-                            (outRvecs[2] * 180.0 / Math.PI).roundToLong().toDouble().format(0, 4)
-                            })",
-                            Point(30.0, 30.0),
-                            FONT_HERSHEY_COMPLEX_SMALL,
-                            0.8,
-                            Scalar(255.0, 50.0, 50.0),
-                            1
-                        )
+//                        putText(
+//                            outMat,
+//                            "RVECT(${
+//                            (foundRvecs[0] * 180.0 / Math.PI).roundToLong().toDouble().format(0, 4)
+//                            },${
+//                            (foundRvecs[1] * 180.0 / Math.PI).roundToLong().toDouble().format(0, 4)
+//                            },${
+//                            (foundRvecs[2] * 180.0 / Math.PI).roundToLong().toDouble().format(0, 4)
+//                            })",
+//                            Point(30.0, 30.0),
+//                            FONT_HERSHEY_COMPLEX_SMALL,
+//                            0.8,
+//                            Scalar(255.0, 50.0, 50.0),
+//                            1
+//                        )
+//
+//                        putText(
+//                            outMat,
+//                            "TVECT(${
+//                            (foundTvecs[0] * calibSizeRatio).format(7, 5)
+//                            },${
+//                            (foundTvecs[1] * calibSizeRatio).format(7, 5)
+//                            },${
+//                            (foundTvecs[2] * calibSizeRatio).format(7, 5)
+//                            })",
+//                            Point(30.0, 50.0),
+//                            FONT_HERSHEY_COMPLEX_SMALL,
+//                            0.8,
+//                            Scalar(255.0, 50.0, 50.0),
+//                            1
+//                        )
+//
+//                        putText(
+//                            outMat,
+//                            "ID = ${foundIDs[0]}",
+//                            Point(30.0, 70.0),
+//                            FONT_HERSHEY_COMPLEX_SMALL,
+//                            0.8,
+//                            Scalar(255.0, 50.0, 50.0),
+//                            1
+//                        )
 
-                        putText(
-                            outMat,
-                            "TVECT(${
-                            (outTvecs[0] * calibSizeRatio).format(7, 5)
-                            },${
-                            (outTvecs[1] * calibSizeRatio).format(7, 5)
-                            },${
-                            (outTvecs[2] * calibSizeRatio).format(7, 5)
-                            })",
-                            Point(30.0, 50.0),
-                            FONT_HERSHEY_COMPLEX_SMALL,
-                            0.8,
-                            Scalar(255.0, 50.0, 50.0),
-                            1
-                        )
+                            if (foundPoses > 1) {
+                                val estimatedPosition = DoubleArray(3) { 0.0 }
 
-                        putText(
-                            outMat,
-                            "ID = ${outIdsVec[0]}",
-                            Point(30.0, 70.0),
-                            FONT_HERSHEY_COMPLEX_SMALL,
-                            0.8,
-                            Scalar(255.0, 50.0, 50.0),
-                            1
-                        )
+
+                                val inliersCount = NativeMethods.estimateCameraPosition(
+                                    camMatrix.nativeObjAddr,
+                                    camDistCoeffs.nativeObjAddr,
+                                    outMat.nativeObjAddr,
+                                    fixedMarkerIds,
+                                    fixedMarkerRvects,
+                                    fixedMarkerTvects,
+                                    foundIDs,
+                                    foundRvecs,
+                                    foundTvecs,
+                                    null,
+                                    null,
+                                    estimatedPosition
+                                )
+                            }
                     }
 //                    return outMat
                 }
@@ -229,7 +278,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
             }
             return inputMat
         } else {
-            Log.v(TAG, "inputFrame is null, returning null to view")
+//            Log.v(TAG, "inputFrame is null, returning null to view")
             return null
         }
 
