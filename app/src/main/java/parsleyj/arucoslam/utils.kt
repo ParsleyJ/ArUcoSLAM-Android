@@ -1,14 +1,16 @@
 package parsleyj.arucoslam
 
-import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import parsleyj.arucoslam.datamodel.Vec3d
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.DoubleBuffer
 import java.nio.FloatBuffer
+
+
 
 val defaultDispatcher = CoroutineScope(Dispatchers.Default)
 val mainDispatcher = CoroutineScope(Dispatchers.Main)
@@ -74,71 +76,6 @@ fun Double.format(digits: Int) = "%.${digits}f".format(this)
 
 fun Double.format(digits: Int, maxWidth: Int) = "%${maxWidth}.${digits}f".format(this)
 
-
-// inline classes! this class does not exist at runtime. It is just a triple. The compiler converts
-//      the method/property calls for us.
-inline class FixedMarkersOnBoard(private val boardData: Triple<List<Int>, List<Vec3d>, List<Vec3d>>) {
-    constructor(ids: List<Int>, rvecs: List<Vec3d>, tvecs: List<Vec3d>) : this(
-        Triple(
-            ids,
-            rvecs,
-            tvecs
-        )
-    )
-
-    val ids: List<Int>
-        get() = boardData.first
-
-    val rvecs: List<Vec3d>
-        get() = boardData.second
-
-    val tvecs: List<Vec3d>
-        get() = boardData.third
-
-}
-
-inline class Vec3d(private val d: DoubleArray) {
-    constructor(x: Double, y: Double, z: Double) : this(
-        doubleArrayOf(x, y, z)
-    )
-
-    val x: Double
-        get() = d[0]
-    val y: Double
-        get() = d[1]
-    val z: Double
-        get() = d[2]
-
-    fun asDoubleArray() = d
-}
-
-fun arucoBoardFixedMarkers(): FixedMarkersOnBoard {
-    val ids = (0 until 40).toList()
-//    val ids = listOf(0)
-    val rvecs = mutableListOf<Vec3d>()
-    val tvecs = mutableListOf<Vec3d>()
-
-    val markerLength = 0.03
-    val markerSeparation = 0.006
-
-    val tX = 3.5 * markerLength + 3.5 * markerSeparation
-    val tY = -2.0 * markerLength - 2.0 * markerSeparation
-
-    for (i in ids) {
-        val row: Int = i / 8
-        val col: Int = i % 8
-        rvecs.add(Vec3d(0.0, 0.0, 0.0))
-        val tvec = Vec3d(
-            tX + -col * (markerLength + markerSeparation),
-            tY + row * (markerLength + markerSeparation),
-            0.0
-        )
-        tvecs.add(tvec)
-        Log.i("FixedMarkersOnBoard", "id=${i} => tvec=(${tvec.x}, ${tvec.y}, ${tvec.z})")
-    }
-
-    return FixedMarkersOnBoard(ids, rvecs, tvecs)
-}
 
 fun List<Vec3d>.flattenVecs():List<Double>{
     return this.flatMap {

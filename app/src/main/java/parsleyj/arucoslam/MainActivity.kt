@@ -18,6 +18,8 @@ import org.opencv.android.FixedCameraBridgeViewBase
 import org.opencv.android.OpenCVLoader
 import org.opencv.core.CvType
 import org.opencv.core.Mat
+import parsleyj.arucoslam.datamodel.ArucoDictionary
+import parsleyj.arucoslam.datamodel.MarkerTaggedSpace
 
 
 class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraViewListener2 {
@@ -40,14 +42,26 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         getDistCoeffsMat()
     }
 
-    //    private var cameraMatrix :Mat? = null
-//    private var distCoeffs :Mat? = null
     private val calibSizeRatio = (480.0 / 720.0)//(864.0 / 1280.0)
 
-    private val arucoBoardFixedMarkers = arucoBoardFixedMarkers()
-    private val fixedMarkerIds = arucoBoardFixedMarkers.ids.toIntArray()
-    private val fixedMarkerRvects = arucoBoardFixedMarkers.rvecs.flattenVecs().toDoubleArray()
-    private val fixedMarkerTvects = arucoBoardFixedMarkers.tvecs.flattenVecs().toDoubleArray()
+    private val arucoBoardFixedMarkers = MarkerTaggedSpace.arucoBoard(
+        dictionary = ArucoDictionary.DICT_6X6_250,
+        markersX = 8,
+        markersY = 5,
+        markerLength = 0.03,
+        markerSeparation = 0.006
+    )
+    private val fixedMarkerIds = arucoBoardFixedMarkers.markers
+        .map { it.markerId }
+        .toIntArray()
+    private val fixedMarkerRvects = arucoBoardFixedMarkers.markers
+        .map { it.pose3d.rotationVector }
+        .flattenVecs()
+        .toDoubleArray()
+    private val fixedMarkerTvects = arucoBoardFixedMarkers.markers
+            .map { it.pose3d.translationVector }
+            .flattenVecs()
+            .toDoubleArray()
 
     private fun setFoundCamParams() {
         cameraMatrix = getCameraMat()

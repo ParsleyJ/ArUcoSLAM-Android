@@ -9,252 +9,27 @@
 #include <opencv2/aruco.hpp>
 #include <opencv2/aruco/charuco.hpp>
 
+#include "utils.h"
+#include "jniUtils.h"
+#include "positionRansac.h"
+#include "map2d.h"
+
 #include <opencv2/calib3d.hpp>
 #include <string>
 #include <sstream>
 #include <cmath>
 #include <memory>
 
-constexpr double calibSizeRatio = (480.0 / 720.0); //(864.0 / 1280.0)
-
-extern "C" JNIEXPORT jstring JNICALL
-Java_parsleyj_arucoslam_MainActivity_ndkLibReadyCheck(
-        JNIEnv *env,
-        jobject /* this */) {
-    std::string hello = "JNILibOk";
-    return env->NewStringUTF(hello.c_str());
-}
-
-auto min(int a, int b) -> int {
-    return a <= b ? a : b;
-}
-
-
-cv::Mat *castToMatPtr(jlong addr) {
-    return (cv::Mat *) addr;
-}
-
-
-
-cv::Vec3d rotationMatrixToEulerAngles(const cv::Mat &R) {
-    double sy = sqrt(
-            R.at<double>(0, 0) * R.at<double>(0, 0)
-            + R.at<double>(1, 0) * R.at<double>(1, 0)
-    );
-
-    bool singular = sy < 1e-6;
-    double x, y, z;
-    if (!singular) {
-        x = atan2(R.at<double>(2, 1), R.at<double>(2, 2));
-        y = atan2(-R.at<double>(2, 0), sy);
-        z = atan2(R.at<double>(1, 0), R.at<double>(0, 0));
-    } else {
-        x = atan2(-R.at<double>(1, 2), R.at<double>(1, 1));
-        y = atan2(-R.at<double>(2, 0), sy);
-        z = 0;
-    }
-    return cv::Vec3d(x, y, z);
-}
-
-
-/*
- * [ R   T ]-1     [ Rt  -Rt*T ]
- * [ 0   1 ]    =  [  0     1  ]
- */
-void invertChangeOfReferenceMatrix(const cv::Mat &inMat, cv::Mat &outMat) {
-    cv::Mat R(3, 3, CV_64FC1);
-    cv::Rect rArea(0, 0, 3, 3);
-    inMat(rArea).copyTo(R);
-    cv::Mat T;
-    cv::Rect tArea(3, 0, 1, 3);
-    cv::Mat t(3, 1, CV_64FC1);
-    inMat(tArea).copyTo(t);
-    R = R.t();
-    t = -R * t;
-    R.copyTo(outMat(rArea));
-    t.copyTo(outMat(tArea));
-    outMat.at<double>(3, 0)
-            = outMat.at<double>(3, 1)
-            = outMat.at<double>(3, 2)
-            = 0.0;
-    outMat.at<double>(3, 3) = 1.0;
-}
-
-
-void genChangeOfReferenceMatrix(const cv::Vec3d &tvec, const cv::Vec3d &rvec, cv::Mat &out) {
-    double data1[9] = {
-            1, 0, 0,
-            0, cos(rvec[0]), -sin(rvec[0]),
-            0, sin(rvec[0]), cos(rvec[0])
-    };
-    double data2[9] = {
-            cos(rvec[1]), 0, sin(rvec[1]),
-            0, 1, 0,
-            -sin(rvec[1]), 0, cos(rvec[1])
-    };
-    double data3[9] = {
-            cos(rvec[2]), -sin(rvec[2]), 0,
-            sin(rvec[2]), cos(rvec[2]), 0,
-            0, 0, 1
-    };
-
-    cv::Mat R;
-    R = cv::Mat(3, 3, CV_64FC1, data1)
-        * cv::Mat(3, 3, CV_64FC1, data2)
-        * cv::Mat(3, 3, CV_64FC1, data3);
-
-
-    for (int r = 0; r < 4; r++) {
-        for (int c = 0; c < 4; c++) {
-            if (0 <= r && r <= 2) {
-                if (0 <= c && c <= 2) {
-                    out.at<double>(r, c) = R.at<double>(r, c);
-                } else {
-                    out.at<double>(r, c) = tvec[r];
-                }
-            } else {
-                if (0 <= c && c <= 2) {
-                    out.at<double>(r, c) = 0.0;
-                } else {
-                    out.at<double>(r, c) = 1.0;
-                }
-            }
-        }
-    }
-}
-
-
-
-void computeCentroid(
-        const std::vector<cv::Vec3d> &vecs,
-        cv::Vec3d &centre
-) {
-    centre[0] = 0;
-    centre[1] = 0;
-    centre[2] = 0;
-    for (const auto &vect: vecs) {
-        centre[0] += vect[0] / double(vecs.size());
-        centre[1] += vect[1] / double(vecs.size());
-        centre[2] += vect[2] / double(vecs.size());
-    }
-}
-
-template<typename T>
-void randomSubset(
-        const std::vector<T> &set,
-        std::vector<T> &subset,
-        size_t subsetSize
-) {
-    subset = set;
-    while (subset.size() > subsetSize) {
-        subset.erase(subset.begin() + rand() % subset.size());
-    }
-}
-
-void vectorRansac(
-        const std::vector<cv::Vec3d> &vecs,
-        cv::Vec3d &foundModel,
-        const std::function<double(const cv::Vec3d &, const cv::Vec3d &)> &distanceFunction,
-        double inlierThreshold,
-        uint maxN,
-        int &inliers
-) {
-    if (vecs.empty()) {
-        inliers = 0;
-        return;
-    }
-    if (vecs.size() == 1) {
-        inliers = 1;
-        foundModel = vecs[0];
-        return;
-    }
-    size_t subSetSize;
-    if (vecs.size() <= 4) {
-        subSetSize = 1;
-    } else if (vecs.size() <= 10) {
-        subSetSize = 2;
-    } else {
-        subSetSize = 5;
-    }
-
-    // target probability to get a subset which generates a model without outliers
-    double prob = 0.8;
-
-    uint attempts = log(1.0 - prob) / log(1.0 - pow(1.0 - M_E, double(subSetSize)));
-    if (attempts == 0) {
-        attempts = 1;
-    }
-    if (attempts > maxN) {
-        attempts = maxN;
-    }
-
-
-    std::vector<cv::Vec3d> bestInliers;
-    for (int attempt_I = 0; attempt_I < attempts; attempt_I++) {
-        std::vector<cv::Vec3d> foundInliers;
-        foundInliers.reserve(vecs.size());
-        std::vector<cv::Vec3d> subset;
-        randomSubset(vecs, subset, subSetSize);
-        cv::Vec3d centroid;
-        computeCentroid(subset, centroid);
-        for (const auto &vec:vecs) {
-            if (distanceFunction(centroid, vec) <= inlierThreshold) {
-                foundInliers.push_back(vec);
-            }
-        }
-        if (attempt_I == 0 || foundInliers.size() > bestInliers.size()) {
-            bestInliers = foundInliers;
-        }
-    }
-
-    inliers = bestInliers.size();
-    computeCentroid(bestInliers, foundModel);
-}
-
-
-void fromRTvectsTo2Dpose(
-        const cv::Vec3d &rVec,
-        const cv::Vec3d &tVec,
-        double &resultX,
-        double &resultY,
-        double &resultAngle
-) {
-
-    resultAngle = (rVec[0] < 0.0 ? -1.0 : 1.0) * rVec[2] * (90.0 / 130.0);
-    resultX = -tVec[0] * calibSizeRatio;
-    resultY = tVec[2] * calibSizeRatio;
-}
-
-
-int fitPositionModel(
-        const std::vector<cv::Vec3d> &rvecs,
-        const std::vector<cv::Vec3d> &tvecs,
-        cv::Vec3d &modelRvec,
-        cv::Vec3d &modelTvec
-) {
-    int inliers = -1;
-    vectorRansac(rvecs, modelRvec, [&](const cv::Vec3d &p1, const cv::Vec3d &p2) {
-        return cv::norm(cv::Vec3d(
-                atan2(sin(p1[0] - p2[0]), cos(p1[0] - p2[0])),
-                atan2(sin(p1[1] - p2[1]), cos(p1[1] - p2[1])),
-                atan2(sin(p1[2] - p2[2]), cos(p1[2] - p2[2]))
-        ));
-    }, 0.05, 100, inliers);
-    vectorRansac(tvecs, modelTvec, [&](const cv::Vec3d &p1, const cv::Vec3d &p2) {
-        return cv::norm(p1 - p2);
-    }, 0.05, 100, inliers);
-
-//    computeCentroid(tvecs, tVec);
-//    computeCentroid(rvecs, modelRvec);
-    return inliers;
-}
+// X -> blue
+// Y -> green
+// Z -> red
 
 
 extern "C"
 JNIEXPORT jint JNICALL
 Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
         JNIEnv *env,
-        jclass clazz,
+        jclass,
         jlong cameraMatrixAddr,
         jlong distCoeffsAddr,
         jlong input_mat_addr,
@@ -270,13 +45,7 @@ Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
     cv::Mat cameraMatrix = *castToMatPtr(cameraMatrixAddr);
     cv::Mat distCoeffs = *castToMatPtr(distCoeffsAddr);
 
-    std::ostringstream a, b;
-    a << cameraMatrix << std::endl;
-    __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-                        "cameraMatrix == %s\n", a.str().c_str());
-    b << distCoeffs << std::endl;
-    __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-                        "distCoeffics == %s\n", b.str().c_str());
+    logCameraParameters("native-lib:processCameraFrame", cameraMatrix, distCoeffs);
 
     std::vector<cv::Mat> channels(3);
     cv::split(inputMat, channels);
@@ -286,20 +55,13 @@ Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
     std::vector<int> ids;
     std::vector<std::vector<cv::Point2f>> corners;
 
-
     cv::aruco::detectMarkers(inputMat, dictionary, corners, ids,
                              cv::aruco::DetectorParameters::create(), cv::noArray(), cameraMatrix,
                              distCoeffs);
-
-//    __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-//                        "detectedMarkers == %d", ids.size());
-
     cv::Mat tmpMat;
     cv::cvtColor(resultMat, tmpMat, CV_RGBA2RGB);
 
     if (!ids.empty()) {
-//        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-//                            "DRAWING DETECTORS");
         cv::aruco::drawDetectedMarkers(tmpMat, corners, ids);
     }
 
@@ -317,137 +79,26 @@ Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
         auto rvec = rvecs[i];
         auto tvec = tvecs[i];
 
-//        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-//                            "RVEC = [%f, %f, %f]", rvec[0], rvec[1], rvec[2]);
-//        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-//                            "TVEC = [%f, %f, %f]", tvec[0], tvec[1], tvec[2]);
-
         env->SetIntArrayRegion(detectedIDsVect, i, 1, &ids[i]);
         for (int vi = 0; vi < 3; vi++) {
             env->SetDoubleArrayRegion(outrvecs, i * 3 + vi, 1, &rvec[vi]);
             env->SetDoubleArrayRegion(outtvecs, i * 3 + vi, 1, &tvec[vi]);
         }
 
-//        cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs, rvec, tvec, 0.08);
     }
 
-//    double markerLength = 0.05;
-//    double markerSeparation = 0.01;
-//    cv::Ptr<cv::aruco::GridBoard> gridboard = cv::aruco::GridBoard::create(
-////            markersX,
-////            markersY,
-////            markerLength,
-////            markerSeparation,
-//            8, 5, markerLength, markerSeparation,
-//            dictionary
-//    ); // create aruco board
-//    auto board = gridboard.staticCast<cv::aruco::Board>();
-//
-//    cv::Vec3d rvec(0, 0, 0), tvec(0, 0, 0);
-//    int nMarkerContributedToPose = cv::aruco::estimatePoseBoard(corners, ids, board, cameraMatrix,
-//                                                                distCoeffs,
-//                                                                rvec, tvec);
-//    if (nMarkerContributedToPose > 0) {
-//        cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs, rvec, tvec, 0.08);
-//        rvecs.emplace_back(rvec[0], rvec[1], rvec[2]);
-//        tvecs.emplace_back(tvec[0], tvec[1], tvec[2]);
-//
-//        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-//                            "RVEC = [%f, %f, %f]", rvec[0], rvec[1], rvec[2]);
-//        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-//                            "TVEC = [%f, %f, %f]", tvec[0], tvec[1], tvec[2]);
-//
-//        int zero = 0;
-//        env->SetIntArrayRegion(detectedIDsVect, 0, 1, &zero);
-//        for (int vi = 0; vi < 3; vi++) {
-//            env->SetDoubleArrayRegion(outrvecs, 0 * 3 + vi, 1, &rvec[vi]);
-//            env->SetDoubleArrayRegion(outtvecs, 0 * 3 + vi, 1, &tvec[vi]);
-//        }
-//
-//        cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs, rvec, tvec, 0.08);
-//
-//
-//        drawCameraPosition(tmpMat, cameraMatrix, distCoeffs, rvecs, tvecs, 0.01);
-//    } else {
-//        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-//                            "DID NOT ESTIMATE BOARD POSE!!!!");
-//    }
-
-
     cv::cvtColor(tmpMat, resultMat, CV_RGB2RGBA);
-//    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib:processCameraFrame",
-//                        "resultMat.size() == %d x %d", resultMat.size().width,
-//                        resultMat.size().height);
+
     return ids.size();
 }
 
-void drawCameraPosition(
-        cv::Mat &_image,
-        double X,
-        double Y,
-        double theta,
-        bool drawBackground = true
-) {
-//    cv::Vec3d cameraTVec = cv::Vec3d(0.05, 0.02, 0.20);
-//    cv::Vec3d negatedRvec = cv::Vec3d(_rvec[0], _rvec[1], -_rvec[2]);
-    // project axis points
-//    std::vector<cv::Point3f> axisPoints;
-//    axisPoints.emplace_back(0, 0, 0);
-//    axisPoints.emplace_back(length, 0, 0);
-//    axisPoints.emplace_back(0, length, 0);
-//    axisPoints.emplace_back(0, 0, length);
-//    std::vector<cv::Point2f> imagePoints;
-//    projectPoints(axisPoints, negatedRvec, cameraTVec, _cameraMatrix, _distCoeffs, imagePoints);
-//
-//     draw axis lines
-//    line(_image, imagePoints[0], imagePoints[1], cv::Scalar(0, 0, 255), 3);
-//    line(_image, imagePoints[0], imagePoints[2], cv::Scalar(0, 255, 0), 3);
-//    line(_image, imagePoints[0], imagePoints[3], cv::Scalar(255, 0, 0), 3);
-
-    int side = _image.rows / 2;
-    double areaSide = 2; //meters
-    cv::Point2f origin((_image.cols - side / 2), _image.rows - side);
-    double aMeterInPixels = (double) side / areaSide;
-
-    if (drawBackground) {
-        // draw box
-        cv::Point2f topLeftCorner = cv::Point2f(_image.cols - side, _image.rows - side);
-        cv::line(_image,
-                 topLeftCorner, cv::Point2f(_image.cols, _image.rows - side),
-                 cv::Scalar(0, 255, 0), 3);
-        cv::line(_image,
-                 topLeftCorner, cv::Point2f(_image.cols - side, _image.rows),
-                 cv::Scalar(0, 255, 0), 3);
-        cv::rectangle(_image, topLeftCorner, cv::Point(_image.cols, _image.rows),
-                      cv::Scalar(0, 0, 0), cv::FILLED);
-
-        cv::drawMarker(_image, origin,
-                       cv::Scalar(255, 0, 0), cv::MARKER_SQUARE, 5);
-    }
-
-    double Xnew = X * cos(theta) - Y * sin(theta);
-    double Ynew = X * sin(theta) + Y * cos(theta);
-    __android_log_print(ANDROID_LOG_DEBUG, "BOHBOHBOHBOHBOHBOHBOHBOH",
-                        "position=(%f, %f); theta=%f",
-                        Xnew * aMeterInPixels, Ynew * aMeterInPixels, theta);
-    cv::Point2f position = origin + cv::Point2f(Xnew * aMeterInPixels, Ynew * aMeterInPixels);
-    cv::drawMarker(_image, position,
-                   cv::Scalar(0, 255, 0), cv::MARKER_TILTED_CROSS, 10);
-
-
-    double arrowHeadX = position.x + 30.0 * cos(theta + (3.0 / 2.0) * CV_PI);
-    double arrowHeadY = position.y + 30.0 * sin(theta + (3.0 / 2.0) * CV_PI);
-    cv::arrowedLine(_image, position, cv::Point2f(arrowHeadX, arrowHeadY),
-                    cv::Scalar(255, 255, 255));
-
-}
 
 
 extern "C"
 JNIEXPORT jint JNICALL
 Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
         JNIEnv *env,
-        jclass clazz,
+        jclass,
         jlong cameraMatrixAddr,
         jlong distCoeffsAddr,
         jlong inputMatAddr,
@@ -463,48 +114,37 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
         jdoubleArray new_position
 ) {
     cv::Mat inputMat = *castToMatPtr(inputMatAddr);
-    const cv::Mat &resultMat = inputMat;
     cv::Mat cameraMatrix = *castToMatPtr(cameraMatrixAddr);
     cv::Mat distCoeffs = *castToMatPtr(distCoeffsAddr);
 
     std::vector<int> fixedMarkersIDs;
     std::vector<cv::Vec3d> fixedMarkersTvecs;
     std::vector<cv::Vec3d> fixedMarkersRvecs;
-    int fixedMarkersSize = env->GetArrayLength(fixed_markers);
-    fixedMarkersIDs.reserve(fixedMarkersSize);
-    jboolean isNotCopy = false;
-    for (int i = 0; i < fixedMarkersSize; i++) {
-        fixedMarkersIDs.push_back(env->GetIntArrayElements(fixed_markers, &isNotCopy)[i]);
-        fixedMarkersRvecs.emplace_back(
-                env->GetDoubleArrayElements(fixed_rvects, &isNotCopy)[i * 3],
-                env->GetDoubleArrayElements(fixed_rvects, &isNotCopy)[i * 3 + 1],
-                env->GetDoubleArrayElements(fixed_rvects, &isNotCopy)[i * 3 + 2]
-        );
-        fixedMarkersTvecs.emplace_back(
-                env->GetDoubleArrayElements(fixed_tvects, &isNotCopy)[i * 3],
-                env->GetDoubleArrayElements(fixed_tvects, &isNotCopy)[i * 3 + 1],
-                env->GetDoubleArrayElements(fixed_tvects, &isNotCopy)[i * 3 + 2]
-        );
-    }
+
+
+    fromJavaArrayToStdVector<jintArray, jint, int>(
+            env,
+            fixed_markers,
+            &JNIEnv::GetIntArrayElements,
+            fixedMarkersIDs
+    );
+
+    fromjDoubleArrayToVectorOfVec3ds(env, fixed_tvects, fixedMarkersTvecs);
+    fromjDoubleArrayToVectorOfVec3ds(env, fixed_rvects, fixedMarkersRvecs);
+
 
     std::vector<int> foundMarkersIDs;
     std::vector<cv::Vec3d> foundMarkersTvecs;
     std::vector<cv::Vec3d> foundMarkersRvecs;
+    fromJavaArrayToStdVector<jintArray, jint, int>(
+            env,
+            inMarkers,
+            &JNIEnv::GetIntArrayElements,
+            foundMarkersIDs
+    );
 
-    foundMarkersIDs.reserve(foundPosesCount);
-    for (int i = 0; i < foundPosesCount; i++) {
-        foundMarkersIDs.push_back(env->GetIntArrayElements(inMarkers, &isNotCopy)[i]);
-        foundMarkersRvecs.emplace_back(
-                env->GetDoubleArrayElements(in_rvects, &isNotCopy)[i * 3],
-                env->GetDoubleArrayElements(in_rvects, &isNotCopy)[i * 3 + 1],
-                env->GetDoubleArrayElements(in_rvects, &isNotCopy)[i * 3 + 2]
-        );
-        foundMarkersTvecs.emplace_back(
-                env->GetDoubleArrayElements(in_tvects, &isNotCopy)[i * 3],
-                env->GetDoubleArrayElements(in_tvects, &isNotCopy)[i * 3 + 1],
-                env->GetDoubleArrayElements(in_tvects, &isNotCopy)[i * 3 + 2]
-        );
-    }
+    fromjDoubleArrayToVectorOfVec3ds(env, in_tvects, foundMarkersTvecs, 0, foundPosesCount);
+    fromjDoubleArrayToVectorOfVec3ds(env, in_rvects, foundMarkersRvecs, 0, foundPosesCount);
 
     std::vector<cv::Vec3d> positionRvecs;
     std::vector<cv::Vec3d> positionTvecs;
@@ -518,29 +158,21 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
 
         if (findFixedMarkerIndex != fixedMarkersIDs.end()) {
             int fixedMarkerIndex = std::distance(fixedMarkersIDs.begin(), findFixedMarkerIndex);
-            // Transformation to change from room's coord sys to marker's coord sys
-            const cv::Vec3d &fixedMarkerTvect = fixedMarkersTvecs[fixedMarkerIndex];
-            const cv::Vec3d &fixedMarkerRvect = fixedMarkersRvecs[fixedMarkerIndex];
 
-            // Transformation to change from marker's coord sys to camera's coord sys
-            const cv::Vec3d &foundMarkerTvect = foundMarkersTvecs[i];
-            const cv::Vec3d &foundMarkerRvect = foundMarkersRvecs[i];
-
-            // (to be computed) Transf to change from room's coord sys to camera's coord sys
             cv::Vec3d recomputedTvec;
             cv::Vec3d recomputedRvec;
 
             cv::composeRT(
-                    fixedMarkerRvect, fixedMarkerTvect,
-                    foundMarkerRvect, foundMarkerTvect,
+                    // Transformation to switch from room's coord sys to marker's coord sys
+                    fixedMarkersRvecs[fixedMarkerIndex], fixedMarkersTvecs[fixedMarkerIndex],
+                    // Transformation to switch from marker's coord sys to camera's coord sys
+                    foundMarkersRvecs[i], foundMarkersTvecs[i],
+                    // (result) Transf to change from room's coord sys to camera's coord sys
                     recomputedRvec, recomputedTvec
             );
 
-
-
             cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs,
                                 recomputedRvec, recomputedTvec, 0.03);
-
 
             positionTvecs.push_back(recomputedTvec);
             positionRvecs.push_back(recomputedRvec);
@@ -549,18 +181,11 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     cv::cvtColor(tmpMat, inputMat, CV_RGB2RGBA);
 
     int inliersCount;
-    double estimatedX, estimatedY, estimatedTheta;
-
-
-
-
-
     cv::Vec3d modelRvec, modelTvec;
-
     inliersCount = fitPositionModel(positionRvecs, positionTvecs,
-                     modelRvec, modelTvec);
+                                    modelRvec, modelTvec);
 
-
+    double estimatedX, estimatedY, estimatedTheta;
     fromRTvectsTo2Dpose(modelRvec, modelTvec, estimatedX, estimatedY, estimatedTheta);
 
     std::ostringstream a;
@@ -572,9 +197,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
                 cv::Scalar(0, 0, 255));
 
 
-
-        drawCameraPosition(inputMat, estimatedX, estimatedY, estimatedTheta);
-
+    drawCameraPosition(inputMat, estimatedX, estimatedY, estimatedTheta);
     return inliersCount;
 }
 
@@ -590,31 +213,25 @@ Java_parsleyj_arucoslam_NativeMethods_detectCalibrationCorners(
         jintArray size,
         jint maxMarkers
 ) {
-    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
-                        "Invoked detect calibration corners");
 
     auto image = *castToMatPtr(input_mat_addr);
     auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
 
-    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
-                        "Input casted");
 
     std::vector<int> ids;
     std::vector<std::vector<cv::Point2f>> corners;
 
     cv::aruco::detectMarkers(image, dictionary, corners, ids);
 
-    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
-                        "Corners detected");
 
     if (ids.empty()) {
-        __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
+        __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp:detectCalibrationCorners",
                             "Empty ids!");
         return 0;
     }
 
 
-    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
+    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp:detectCalibrationCorners",
                         "ids.size == %d", ids.size());
 
     for (int csi = 0; csi < fmin(corners.size(), maxMarkers); csi++) {
@@ -634,14 +251,10 @@ Java_parsleyj_arucoslam_NativeMethods_detectCalibrationCorners(
         env->SetIntArrayRegion(idsVect, i, 1, &ids[i]);
     }
 
-    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
-                        "Populated arrays");
 
     env->SetIntArrayRegion(size, 0, 1, &image.rows);
     env->SetIntArrayRegion(size, 1, 1, &image.cols);
 
-    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp",
-                        "Populated size");
     return ids.size();
 }
 
@@ -662,13 +275,9 @@ Java_parsleyj_arucoslam_NativeMethods_calibrate(
 
     auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
     cv::Ptr<cv::aruco::GridBoard> gridboard = cv::aruco::GridBoard::create(
-//            markersX,
-//            markersY,
-//            markerLength,
-//            markerSeparation,
             8, 5, 500, 100,
             dictionary
-    ); // create aruco board
+    );
     auto board = gridboard.staticCast<cv::aruco::Board>();
 
     std::vector<std::vector<std::vector<cv::Point2f>>> allCorners;
@@ -713,7 +322,7 @@ Java_parsleyj_arucoslam_NativeMethods_calibrate(
 
     cv::Size imgSize(size_cols, size_rows);
     if (allIds.empty()) {
-        __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp",
+        __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp:calibrate",
                             "Not enough captures for calibration");
         return 0.0;
     }
@@ -751,6 +360,7 @@ Java_parsleyj_arucoslam_NativeMethods_calibrate(
     return repError;
 
 }
+
 extern "C"
 JNIEXPORT jdouble JNICALL
 Java_parsleyj_arucoslam_NativeMethods_calibrateChArUco(
@@ -823,13 +433,14 @@ Java_parsleyj_arucoslam_NativeMethods_calibrateChArUco(
             collectedFramesAddresses,
             &isNotCopy
     );
+    allFrames.reserve(nFrames);
     for (int i = 0; i < nFrames; i++) {
         allFrames.push_back(*castToMatPtr(framesAddresses[i]));
     }
 
     cv::Size imgSize(size_cols, size_rows);
     if (allIds.empty()) {
-        __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp",
+        __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp:calibrateChArUco",
                             "Not enough captures for calibration");
         return 0.0;
     }
@@ -873,7 +484,7 @@ Java_parsleyj_arucoslam_NativeMethods_calibrateChArUco(
             cv::noArray(),
             0);
 
-    __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp",
+    __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp:calibrateChArUco",
                         "aruco rep error = %f", arucoRepError);
 
     for (int i = 0; i < nFrames; i++) {
@@ -889,7 +500,7 @@ Java_parsleyj_arucoslam_NativeMethods_calibrateChArUco(
     }
 
     if (allCharucoCorners.size() < 4) {
-        __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp",
+        __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp:calibrateChArUco",
                             "Not enough corners for calibration");
         return 0;
     }
@@ -908,9 +519,11 @@ Java_parsleyj_arucoslam_NativeMethods_calibrateChArUco(
             tvecs,
             0);
 
-    __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp",
+    __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp:calibrateChArUco",
                         "rep error = %f", repError);
 
     return repError;
 }
+
+
 #pragma clang diagnostic pop
