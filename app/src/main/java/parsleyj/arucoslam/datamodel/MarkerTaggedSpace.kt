@@ -2,7 +2,7 @@ package parsleyj.arucoslam.datamodel
 
 import android.util.Log
 
-data class MarkerTaggedSpace(
+class MarkerTaggedSpace(
     val dictionary: ArucoDictionary,
     val markers: List<FixedMarker>
 ) {
@@ -51,6 +51,7 @@ data class MarkerTaggedSpace(
         markers.map { it.markerId to it }.toMap()
     }
 
-
     operator fun get(id: Int) = markerMap[id]
+
+    fun getMarkerSpecs(id:Int) = this[id]
 }

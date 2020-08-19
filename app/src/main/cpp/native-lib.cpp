@@ -13,6 +13,7 @@
 #include "jniUtils.h"
 #include "positionRansac.h"
 #include "map2d.h"
+#include "MarkerTaggedSpaceInterface.h"
 
 #include <opencv2/calib3d.hpp>
 #include <string>
