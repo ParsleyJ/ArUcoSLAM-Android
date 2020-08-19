@@ -34,15 +34,7 @@ cv::Mat *castToMatPtr(jlong addr) {
     return (cv::Mat *) addr;
 }
 
-template<typename T>
-cv::Ptr<T> jlongToCvPtr(jlong addr) {
-    return cv::Ptr<T>((T *) addr);
-}
 
-template<typename T>
-jlong cvPtrToJlong(cv::Ptr<T> ptr) {
-    return (jlong) ptr.get();
-}
 
 cv::Vec3d rotationMatrixToEulerAngles(const cv::Mat &R) {
     double sy = sqrt(
@@ -131,15 +123,7 @@ void genChangeOfReferenceMatrix(const cv::Vec3d &tvec, const cv::Vec3d &rvec, cv
     }
 }
 
-void arucoBoardPositions(
-        std::vector<cv::Vec3d> &postions
-) {
-    for (int i = 0; i < 40; i++) {
-        int row = i / 8 - 2;
-        int col = i % 8 - 3;
 
-    }
-}
 
 void computeCentroid(
         const std::vector<cv::Vec3d> &vecs,
@@ -171,7 +155,7 @@ void vectorRansac(
         const std::vector<cv::Vec3d> &vecs,
         cv::Vec3d &foundModel,
         const std::function<double(const cv::Vec3d &, const cv::Vec3d &)> &distanceFunction,
-        double maxModelDistance,
+        double inlierThreshold,
         uint maxN,
         int &inliers
 ) {
@@ -204,27 +188,27 @@ void vectorRansac(
         attempts = maxN;
     }
 
-    cv::Vec3d bestCentroid;
-    int bestCount = 0;
+
+    std::vector<cv::Vec3d> bestInliers;
     for (int attempt_I = 0; attempt_I < attempts; attempt_I++) {
+        std::vector<cv::Vec3d> foundInliers;
+        foundInliers.reserve(vecs.size());
         std::vector<cv::Vec3d> subset;
         randomSubset(vecs, subset, subSetSize);
         cv::Vec3d centroid;
         computeCentroid(subset, centroid);
-        int inlierCount = 0;
         for (const auto &vec:vecs) {
-            if (distanceFunction(centroid, vec) <= maxModelDistance) {
-                inlierCount++;
+            if (distanceFunction(centroid, vec) <= inlierThreshold) {
+                foundInliers.push_back(vec);
             }
         }
-        if (attempt_I == 0 || inlierCount > bestCount) {
-            bestCentroid = centroid;
-            bestCount = inlierCount;
+        if (attempt_I == 0 || foundInliers.size() > bestInliers.size()) {
+            bestInliers = foundInliers;
         }
     }
 
-    foundModel = bestCentroid;
-    inliers = bestCount;
+    inliers = bestInliers.size();
+    computeCentroid(bestInliers, foundModel);
 }
 
 
@@ -236,37 +220,33 @@ void fromRTvectsTo2Dpose(
         double &resultAngle
 ) {
 
-    resultAngle = (rVec[0] < 0 ? 1 : -1) * rVec[2] * (90.0 / 130.0);
+    resultAngle = (rVec[0] < 0.0 ? -1.0 : 1.0) * rVec[2] * (90.0 / 130.0);
     resultX = -tVec[0] * calibSizeRatio;
     resultY = tVec[2] * calibSizeRatio;
 }
 
 
-void fitPositionModel(
+int fitPositionModel(
         const std::vector<cv::Vec3d> &rvecs,
         const std::vector<cv::Vec3d> &tvecs,
-        int &inliers,
-        double &resultX,
-        double &resultY,
-        double &resultAngle
+        cv::Vec3d &modelRvec,
+        cv::Vec3d &modelTvec
 ) {
-    cv::Vec3d tVec;
-    cv::Vec3d rVec;
-//    vectorRansac(rvecs, rVec, [&](const cv::Vec3d &p1, const cv::Vec3d &p2) {
-//        return cv::norm(cv::Vec3d(
-//                atan2(sin(p1[0] - p2[0]), cos(p1[0] - p2[0])),
-//                atan2(sin(p1[1] - p2[1]), cos(p1[1] - p2[1])),
-//                atan2(sin(p1[2] - p2[2]), cos(p1[2] - p2[2]))
-//        ));
-//    }, 0.05, 100, inliers);
-    vectorRansac(tvecs, tVec, [&](const cv::Vec3d &p1, const cv::Vec3d &p2) {
+    int inliers = -1;
+    vectorRansac(rvecs, modelRvec, [&](const cv::Vec3d &p1, const cv::Vec3d &p2) {
+        return cv::norm(cv::Vec3d(
+                atan2(sin(p1[0] - p2[0]), cos(p1[0] - p2[0])),
+                atan2(sin(p1[1] - p2[1]), cos(p1[1] - p2[1])),
+                atan2(sin(p1[2] - p2[2]), cos(p1[2] - p2[2]))
+        ));
+    }, 0.05, 100, inliers);
+    vectorRansac(tvecs, modelTvec, [&](const cv::Vec3d &p1, const cv::Vec3d &p2) {
         return cv::norm(p1 - p2);
     }, 0.05, 100, inliers);
 
 //    computeCentroid(tvecs, tVec);
-    computeCentroid(rvecs, rVec);
-
-    fromRTvectsTo2Dpose(rVec, tVec, resultX, resultY, resultAngle);
+//    computeCentroid(rvecs, modelRvec);
+    return inliers;
 }
 
 
@@ -306,29 +286,27 @@ Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
     std::vector<int> ids;
     std::vector<std::vector<cv::Point2f>> corners;
 
-    __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-                        "inputMat.channels() == %d", inputMat.channels());
 
     cv::aruco::detectMarkers(inputMat, dictionary, corners, ids,
                              cv::aruco::DetectorParameters::create(), cv::noArray(), cameraMatrix,
                              distCoeffs);
 
-    __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-                        "detectedMarkers == %d", ids.size());
+//    __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
+//                        "detectedMarkers == %d", ids.size());
 
     cv::Mat tmpMat;
     cv::cvtColor(resultMat, tmpMat, CV_RGBA2RGB);
 
     if (!ids.empty()) {
-        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-                            "DRAWING DETECTORS");
+//        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
+//                            "DRAWING DETECTORS");
         cv::aruco::drawDetectedMarkers(tmpMat, corners, ids);
     }
 
     std::vector<cv::Vec3d> rvecs, tvecs;
     cv::aruco::estimatePoseSingleMarkers(
             corners,
-            0.05,
+            0.03,
             cameraMatrix,
             distCoeffs,
             rvecs,
@@ -339,10 +317,10 @@ Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
         auto rvec = rvecs[i];
         auto tvec = tvecs[i];
 
-        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-                            "RVEC = [%f, %f, %f]", rvec[0], rvec[1], rvec[2]);
-        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
-                            "TVEC = [%f, %f, %f]", tvec[0], tvec[1], tvec[2]);
+//        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
+//                            "RVEC = [%f, %f, %f]", rvec[0], rvec[1], rvec[2]);
+//        __android_log_print(ANDROID_LOG_DEBUG, "native-lib:processCameraFrame",
+//                            "TVEC = [%f, %f, %f]", tvec[0], tvec[1], tvec[2]);
 
         env->SetIntArrayRegion(detectedIDsVect, i, 1, &ids[i]);
         for (int vi = 0; vi < 3; vi++) {
@@ -397,9 +375,9 @@ Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
 
 
     cv::cvtColor(tmpMat, resultMat, CV_RGB2RGBA);
-    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib:processCameraFrame",
-                        "resultMat.size() == %d x %d", resultMat.size().width,
-                        resultMat.size().height);
+//    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib:processCameraFrame",
+//                        "resultMat.size() == %d x %d", resultMat.size().width,
+//                        resultMat.size().height);
     return ids.size();
 }
 
@@ -476,6 +454,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
         jintArray fixed_markers,
         jdoubleArray fixed_rvects,
         jdoubleArray fixed_tvects,
+        jint foundPosesCount,
         jintArray inMarkers,
         jdoubleArray in_rvects,
         jdoubleArray in_tvects,
@@ -511,9 +490,9 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     std::vector<int> foundMarkersIDs;
     std::vector<cv::Vec3d> foundMarkersTvecs;
     std::vector<cv::Vec3d> foundMarkersRvecs;
-    int foundMarkersSize = env->GetArrayLength(inMarkers);
-    foundMarkersIDs.reserve(foundMarkersSize);
-    for (int i = 0; i < foundMarkersSize; i++) {
+
+    foundMarkersIDs.reserve(foundPosesCount);
+    for (int i = 0; i < foundPosesCount; i++) {
         foundMarkersIDs.push_back(env->GetIntArrayElements(inMarkers, &isNotCopy)[i]);
         foundMarkersRvecs.emplace_back(
                 env->GetDoubleArrayElements(in_rvects, &isNotCopy)[i * 3],
@@ -529,6 +508,8 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
 
     std::vector<cv::Vec3d> positionRvecs;
     std::vector<cv::Vec3d> positionTvecs;
+    cv::Mat tmpMat;
+    cv::cvtColor(inputMat, tmpMat, CV_RGBA2RGB);
 
     for (int i = 0; i < foundMarkersIDs.size(); i++) {
         int foundMarkerID = foundMarkersIDs[i];
@@ -549,60 +530,51 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
             cv::Vec3d recomputedTvec;
             cv::Vec3d recomputedRvec;
 
-
             cv::composeRT(
-                    foundMarkerRvect, foundMarkerTvect,
                     fixedMarkerRvect, fixedMarkerTvect,
+                    foundMarkerRvect, foundMarkerTvect,
                     recomputedRvec, recomputedTvec
             );
 
 
-//            cv::Mat fromRoomToMarker(4, 4, CV_64FC1);
-//            genChangeOfReferenceMatrix(fixedMarkerTvect, fixedMarkerRvect, fromRoomToMarker);
-//
-//            cv::Mat fromMarkerToCamera(4, 4, CV_64FC1);
-//            genChangeOfReferenceMatrix(foundMarkerTvect, foundMarkerRvect, fromMarkerToCamera);
-//            cv::Mat fromRoomToCamera;
-//            fromRoomToCamera = fromRoomToMarker * fromMarkerToCamera;
 
-//            recomputedTvec << fromRoomToCamera.at<double>(0, 3),
-//                    fromRoomToCamera.at<double>(1, 3),
-//                    fromRoomToCamera.at<double>(2, 3);
-//
-//            recomputedRvec = rotationMatrixToEulerAngles(
-//                    fromRoomToCamera(cv::Rect(0, 0, 3, 3))
-//            );
+            cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs,
+                                recomputedRvec, recomputedTvec, 0.03);
 
 
             positionTvecs.push_back(recomputedTvec);
             positionRvecs.push_back(recomputedRvec);
         }
     }
+    cv::cvtColor(tmpMat, inputMat, CV_RGB2RGBA);
 
-    int inliersCount = -1;
+    int inliersCount;
     double estimatedX, estimatedY, estimatedTheta;
 
-    for (int i = 0; i < positionRvecs.size(); i++) {
-        fromRTvectsTo2Dpose(positionRvecs[i], positionTvecs[i], estimatedX, estimatedY,
-                            estimatedTheta);
-
-
-//    fitPositionModel(positionRvecs, positionTvecs, inliersCount,
-//                     estimatedX, estimatedY, estimatedTheta);
-//
-//
-//    std::ostringstream a;
-//    a << "INLIERS=" << inliersCount;
-//    int side = inputMat.rows / 2;
-//    cv::Point2f topLeftCorner = cv::Point2f(inputMat.cols - side, inputMat.rows - side);
-//    cv::putText(inputMat, a.str(), topLeftCorner + cv::Point2f(0, -30),
-//                CV_FONT_HERSHEY_COMPLEX_SMALL, 1.0,
-//                cv::Scalar(0, 0, 255));
 
 
 
-        drawCameraPosition(inputMat, estimatedX, estimatedY, estimatedTheta, i == 0);
-    }
+
+    cv::Vec3d modelRvec, modelTvec;
+
+    inliersCount = fitPositionModel(positionRvecs, positionTvecs,
+                     modelRvec, modelTvec);
+
+
+    fromRTvectsTo2Dpose(modelRvec, modelTvec, estimatedX, estimatedY, estimatedTheta);
+
+    std::ostringstream a;
+    a << "INLIERS=" << inliersCount;
+    int side = inputMat.rows / 2;
+    cv::Point2f topLeftCorner = cv::Point2f(inputMat.cols - side, inputMat.rows - side);
+    cv::putText(inputMat, a.str(), topLeftCorner + cv::Point2f(0, -30),
+                CV_FONT_HERSHEY_COMPLEX_SMALL, 1.0,
+                cv::Scalar(0, 0, 255));
+
+
+
+        drawCameraPosition(inputMat, estimatedX, estimatedY, estimatedTheta);
+
     return inliersCount;
 }
 

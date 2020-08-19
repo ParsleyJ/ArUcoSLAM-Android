@@ -1,5 +1,6 @@
 package parsleyj.arucoslam
 
+import android.util.Log
 import org.opencv.core.Mat
 import kotlin.reflect.KProperty
 
@@ -8,16 +9,22 @@ import kotlin.reflect.KProperty
  * Used to solve via redundancy the problem where a Mat changes its interal values after the
  * ART GC runs. Apparently Android does not care so much about memory used by jni libraries.
  */
-class CRCCheckedMat (
-    private val retriever:()->Mat?
-){
+class CRCCheckedMat(
+    private val retriever: () -> Mat?
+) {
     private var mat: Mat? = null
     private var checkValue: Int = 0
 
 
     operator fun getValue(thisRef: Any, property: KProperty<*>): Mat? {
-        if(mat != null){
-            if(checkValue != computeSumCheck(mat!!)){
+        if (mat != null) {
+            val evalSumCheck = computeSumCheck(mat!!)
+            Log.i(
+                "CRCCheckedMat", "${property.name}: evalSumCheck=${evalSumCheck}" +
+                        " original: $checkValue"
+            )
+            if (checkValue != evalSumCheck) {
+                Log.d("CRCCheckedMat", "${property.name}: INVALIDATED MAT! retrieving...")
                 mat = retriever()
             }
         }
@@ -25,12 +32,13 @@ class CRCCheckedMat (
     }
 
     operator fun setValue(thisRef: Any, property: KProperty<*>, value: Mat?) {
-        if (value == null){
+        if (value == null) {
             mat = null
         }
         if (value is Mat) {
             mat = value
             checkValue = computeSumCheck(value)
+            Log.i("CRCCheckedMat", "${property.name}: computed checkValue=${value}")
         }
     }
 
@@ -51,7 +59,7 @@ class CRCCheckedMat (
             return crc
         }
 
-        private fun computeSumCheck(m: Mat):Int{
+        private fun computeSumCheck(m: Mat): Int {
 
             val doubleData = DoubleArray((m.total() * m.channels()).toInt())
             m.get(0, 0, doubleData)

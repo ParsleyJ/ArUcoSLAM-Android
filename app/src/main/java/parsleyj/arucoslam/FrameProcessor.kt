@@ -16,7 +16,7 @@ class FrameProcessor(
     var orderToken = -1L
     private var currentJob: Job? = null
 
-    private var idsVec = IntArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT) { 0 }
+    private var idsVec = IntArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT) { -1 }
     private var rvecs = DoubleArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT * 3) { 0.0 }
     private var tvecs = DoubleArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT * 3) { 0.0 }
 

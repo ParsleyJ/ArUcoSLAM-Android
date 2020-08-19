@@ -16,13 +16,8 @@ import android.widget.Toast
 import kotlinx.android.synthetic.main.activity_main.*
 import org.opencv.android.FixedCameraBridgeViewBase
 import org.opencv.android.OpenCVLoader
-import org.opencv.core.Core.FONT_HERSHEY_COMPLEX_SMALL
 import org.opencv.core.CvType
 import org.opencv.core.Mat
-import org.opencv.core.Point
-import org.opencv.core.Scalar
-import org.opencv.imgproc.Imgproc.putText
-import kotlin.math.roundToLong
 
 
 class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraViewListener2 {
@@ -34,11 +29,12 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     }
 
     // since Android GC deletes underlying data in field Mats, i use this property delegator
-    // to reload the correct data from storage when the mats become corrupt.
+    // to reload the correct data from storage/hardcoded data when the mats become corrupt.
     private var cameraMatrix by CRCCheckedMat {
 //        PersistentCameraParameters.retrieveSavedCameraMatrix(applicationContext)
         getCameraMat()
     }
+
     private var distCoeffs by CRCCheckedMat {
 //        PersistentCameraParameters.retrieveSavedDistCoefficients(applicationContext)
         getDistCoeffsMat()
@@ -53,13 +49,13 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     private val fixedMarkerRvects = arucoBoardFixedMarkers.rvecs.flattenVecs().toDoubleArray()
     private val fixedMarkerTvects = arucoBoardFixedMarkers.tvecs.flattenVecs().toDoubleArray()
 
-    fun setFoundCamParams() {
+    private fun setFoundCamParams() {
         cameraMatrix = getCameraMat()
         distCoeffs = getDistCoeffsMat()
         PersistentCameraParameters.saveCameraParameters(this, cameraMatrix, distCoeffs)
     }
 
-    fun getCameraMat(): Mat {
+    private fun getCameraMat(): Mat {
         return Mat(
             3, 3, CvType.CV_64FC1, doubleArrayOf(
                 1032.8829095671827, 0.0, 633.4940320469335 * calibSizeRatio,
@@ -69,7 +65,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         )
     }
 
-    fun getDistCoeffsMat(): Mat {
+    private fun getDistCoeffsMat(): Mat {
         return Mat(
             1, 5, CvType.CV_64FC1, doubleArrayOf(
                 0.138768877522313,
@@ -164,7 +160,6 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     }
 
 
-
     private var frameCounter = 0L
 
     private fun countFrame(): Long {
@@ -180,24 +175,18 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
             Log.v(TAG, "inputFrame != null")
             val inputMat = inputFrame.rgba()
 
-            val camMatrix = cameraMatrix
-            val camDistCoeffs = distCoeffs
-            if (camMatrix == null || camDistCoeffs == null) {
-//                Log.v(TAG, "camera matrix and dist coeffs are null")
-            } else {
-                if (frameStreamProcessor == null) {
-//                    Log.v(TAG, "we have camera matrix and dist coeffs")
-//                    Log.v(TAG, "started to process camera frame...")
-//                    val inMat = inputMat
-//                    val outMat = Mat.zeros(inMat.size(), inMat.type())
-                    frameStreamProcessor = FrameStreamProcessor(
-                        inputMat.size(),
-                        inputMat.type(),
-                        2 // number of parallel processors on frames
-                    ) { inMat, outMat, foundIDs, foundRvecs, foundTvecs ->
+            if (frameStreamProcessor == null) {
+                frameStreamProcessor = FrameStreamProcessor(
+                    inputMat.size(),
+                    inputMat.type(),
+                    2 // number of parallel processors on frames
+                ) { inMat, outMat, foundIDs, foundRvecs, foundTvecs ->
+
+                    if (cameraMatrix != null && distCoeffs != null) {
+
                         val foundPoses = NativeMethods.processCameraFrame(
-                            camMatrix.nativeObjAddr,
-                            camDistCoeffs.nativeObjAddr,
+                            cameraMatrix!!.nativeObjAddr,
+                            distCoeffs!!.nativeObjAddr,
                             inMat.nativeObjAddr,
                             outMat.nativeObjAddr,
                             DETECTED_MARKERS_MAX_OUTPUT,
@@ -249,34 +238,34 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
 //                            1
 //                        )
 
-                            if (foundPoses > 1) {
-                                val estimatedPosition = DoubleArray(3) { 0.0 }
+                        if (foundPoses > 1) {
+                            val estimatedPosition = DoubleArray(3) { 0.0 }
 
 
-                                val inliersCount = NativeMethods.estimateCameraPosition(
-                                    camMatrix.nativeObjAddr,
-                                    camDistCoeffs.nativeObjAddr,
-                                    outMat.nativeObjAddr,
-                                    fixedMarkerIds,
-                                    fixedMarkerRvects,
-                                    fixedMarkerTvects,
-                                    foundIDs,
-                                    foundRvecs,
-                                    foundTvecs,
-                                    null,
-                                    null,
-                                    estimatedPosition
-                                )
-                            }
+                            val inliersCount = NativeMethods.estimateCameraPosition(
+                                cameraMatrix!!.nativeObjAddr,
+                                distCoeffs!!.nativeObjAddr,
+                                outMat.nativeObjAddr,
+                                fixedMarkerIds,
+                                fixedMarkerRvects,
+                                fixedMarkerTvects,
+                                foundPoses,
+                                foundIDs,
+                                foundRvecs,
+                                foundTvecs,
+                                null,
+                                null,
+                                estimatedPosition
+                            )
+                        }
                     }
-//                    return outMat
                 }
-
-                frameStreamProcessor!!.supply(inputMat, countFrame())
-                Log.d(TAG, "FrameStream usage = ${frameStreamProcessor!!.usage()}")
-                return frameStreamProcessor!!.retrieve()
             }
-            return inputMat
+
+
+            frameStreamProcessor!!.supply(inputMat, countFrame())
+            Log.d(TAG, "FrameStream usage = ${frameStreamProcessor!!.usage()}")
+            return frameStreamProcessor!!.retrieve()
         } else {
 //            Log.v(TAG, "inputFrame is null, returning null to view")
             return null

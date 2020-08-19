@@ -48,6 +48,7 @@ public class NativeMethods {
             int[] fixedMarkers,
             double[] fixedRVects,
             double[] fixedTVects,
+            int foundPoses,
             int[] inMarkers,
             double[] inRvects,
             double[] inTvects,

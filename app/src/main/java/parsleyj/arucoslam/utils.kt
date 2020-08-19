@@ -1,5 +1,6 @@
 package parsleyj.arucoslam
 
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -113,20 +114,27 @@ inline class Vec3d(private val d: DoubleArray) {
 
 fun arucoBoardFixedMarkers(): FixedMarkersOnBoard {
     val ids = (0 until 40).toList()
+//    val ids = listOf(0)
     val rvecs = mutableListOf<Vec3d>()
     val tvecs = mutableListOf<Vec3d>()
 
-    val markerLength = 0.05
-    val markerSeparation = 0.01
+    val markerLength = 0.03
+    val markerSeparation = 0.006
 
-    val tX = -3.5 * markerLength - 3.5 * markerSeparation
+    val tX = 3.5 * markerLength + 3.5 * markerSeparation
     val tY = -2.0 * markerLength - 2.0 * markerSeparation
 
     for (i in ids) {
-        val row = i / 8
-        val col = i % 8
+        val row: Int = i / 8
+        val col: Int = i % 8
         rvecs.add(Vec3d(0.0, 0.0, 0.0))
-        tvecs.add(Vec3d(tX + row*(markerLength+markerSeparation), tY + col*(markerLength+markerSeparation), 0.0))
+        val tvec = Vec3d(
+            tX + -col * (markerLength + markerSeparation),
+            tY + row * (markerLength + markerSeparation),
+            0.0
+        )
+        tvecs.add(tvec)
+        Log.i("FixedMarkersOnBoard", "id=${i} => tvec=(${tvec.x}, ${tvec.y}, ${tvec.z})")
     }
 
     return FixedMarkersOnBoard(ids, rvecs, tvecs)
