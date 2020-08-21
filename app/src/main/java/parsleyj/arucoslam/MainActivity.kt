@@ -44,27 +44,30 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
 
     private val calibSizeRatio = (480.0 / 720.0)//(864.0 / 1280.0)
 
-//    private val arucoBoardFixedMarkers = MarkerTaggedSpace.arucoBoard(
+//    private val markerSpace = MarkerTaggedSpace.arucoBoard(
 //        dictionary = ArucoDictionary.DICT_6X6_250,
 //        markersX = 8,
 //        markersY = 5,
 //        markerLength = 0.0295,
 //        markerSeparation = 0.006
 //    )
-    private val arucoBoardFixedMarkers = MarkerTaggedSpace.threeStackedMarkers(
+    private val markerSpace = MarkerTaggedSpace.threeStackedMarkers(
         ArucoDictionary.DICT_6X6_250, Triple(4,5,6), 0.08, 0.0055
     )
 
-    private val fixedMarkerIds = arucoBoardFixedMarkers.markers
+    private val fixedMarkerIds = markerSpace.markers
         .map { it.markerId }
         .toIntArray()
-    private val fixedMarkerRvects = arucoBoardFixedMarkers.markers
+    private val fixedMarkerRvects = markerSpace.markers
         .map { it.pose3d.rotationVector }
         .flattenVecs()
         .toDoubleArray()
-    private val fixedMarkerTvects = arucoBoardFixedMarkers.markers
+    private val fixedMarkerTvects = markerSpace.markers
         .map { it.pose3d.translationVector }
         .flattenVecs()
+        .toDoubleArray()
+    private val fixedMarkerLengths = markerSpace.markers
+        .map { it.markerSideLength }
         .toDoubleArray()
 
     private fun setFoundCamParams() {
@@ -207,6 +210,8 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                             distCoeffs!!.nativeObjAddr,
                             inMat.nativeObjAddr,
                             outMat.nativeObjAddr,
+                            fixedMarkerIds,
+                            fixedMarkerLengths,
                             DETECTED_MARKERS_MAX_OUTPUT,
                             foundIDs,
                             foundRvecs,
@@ -225,6 +230,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                                 fixedMarkerIds,
                                 fixedMarkerRvects,
                                 fixedMarkerTvects,
+                                fixedMarkerLengths,
                                 foundPoses,
                                 foundIDs,
                                 foundRvecs,

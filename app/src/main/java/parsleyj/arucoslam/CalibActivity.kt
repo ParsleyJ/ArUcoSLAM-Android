@@ -296,6 +296,8 @@ class CalibActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraVie
                             distCoeffs!!.nativeObjAddr,
                             inMat.nativeObjAddr,
                             outMat.nativeObjAddr,
+                            (0 until 40).toList().toIntArray(),
+                            DoubleArray(40){0.03},
                             MainActivity.DETECTED_MARKERS_MAX_OUTPUT,
                             outIdsVec,
                             outRvecs,

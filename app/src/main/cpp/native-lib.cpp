@@ -13,6 +13,7 @@
 #include "jniUtils.h"
 #include "positionRansac.h"
 #include "map2d.h"
+#include "opencv-extensions.h"
 
 #include <opencv2/calib3d.hpp>
 #include <string>
@@ -25,6 +26,9 @@
 // Z -> red
 
 
+
+
+
 extern "C"
 JNIEXPORT jint JNICALL
 Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
@@ -34,6 +38,8 @@ Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
         jlong distCoeffsAddr,
         jlong input_mat_addr,
         jlong result_mat_addr,
+        jintArray acceptedMarkerIDs,
+        jdoubleArray markersSizes,
         jint maxMarkers,
         jintArray detectedIDsVect,
         jdoubleArray outrvecs,
@@ -44,6 +50,17 @@ Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
     cv::Mat resultMat = *castToMatPtr(result_mat_addr);
     cv::Mat cameraMatrix = *castToMatPtr(cameraMatrixAddr);
     cv::Mat distCoeffs = *castToMatPtr(distCoeffsAddr);
+
+    std::unordered_map<int, double> markerSizesMap;
+    populateMapFromJavaArrays<jintArray, jdoubleArray, int, double>(
+            env,
+            acceptedMarkerIDs,
+            markersSizes,
+            &JNIEnv::GetIntArrayElements,
+            &JNIEnv::GetDoubleArrayElements,
+            markerSizesMap
+    );
+
 
     logCameraParameters("native-lib:processCameraFrame", cameraMatrix, distCoeffs);
 
@@ -61,19 +78,28 @@ Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
     cv::Mat tmpMat;
     cv::cvtColor(resultMat, tmpMat, CV_RGBA2RGB);
 
-    if (!ids.empty()) {
-        cv::aruco::drawDetectedMarkers(tmpMat, corners, ids);
+
+    std::vector<int> acceptedMarkers;
+    std::vector<std::vector<cv::Point2f>> acceptedCorners;
+    std::vector<double> acceptedMarkerLengths;
+    for (int i = 0; i < ids.size(); i++) {
+        if (markerSizesMap.find(ids[i]) != markerSizesMap.end()) {
+            acceptedMarkers.push_back(ids[i]);
+            acceptedCorners.push_back(corners[i]);
+            acceptedMarkerLengths.push_back(markerSizesMap[ids[i]]);
+        }
+    }
+
+
+    if (!acceptedMarkers.empty()) {
+        cv::aruco::drawDetectedMarkers(tmpMat, acceptedCorners, acceptedMarkers);
     }
 
     std::vector<cv::Vec3d> rvecs, tvecs;
-    cv::aruco::estimatePoseSingleMarkers(
-            corners,
-            0.08,
-            cameraMatrix,
-            distCoeffs,
-            rvecs,
-            tvecs
-    );
+    estimatePoseSingleMarkers(
+            acceptedCorners, acceptedMarkerLengths,
+            cameraMatrix, distCoeffs,
+            rvecs, tvecs);
 
     for (int i = 0; i < min(int(rvecs.size()), maxMarkers); i++) {
         auto rvec = rvecs[i];
@@ -105,6 +131,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
         jintArray fixed_markers,
         jdoubleArray fixed_rvects,
         jdoubleArray fixed_tvects,
+        jdoubleArray fixed_lengths,
         jint foundPosesCount,
         jintArray inMarkers,
         jdoubleArray in_rvects,
@@ -132,6 +159,15 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     pushjDoubleArrayToVectorOfVec3ds(env, fixed_tvects, fixedMarkersTvecs);
     pushjDoubleArrayToVectorOfVec3ds(env, fixed_rvects, fixedMarkersRvecs);
 
+    std::unordered_map<int, double> markerSizesMap;
+    populateMapFromJavaArrays<jintArray, jdoubleArray, int, double>(
+            env,
+            fixed_markers,
+            fixed_lengths,
+            &JNIEnv::GetIntArrayElements,
+            &JNIEnv::GetDoubleArrayElements,
+            markerSizesMap
+    );
 
     std::vector<int> foundMarkersIDs;
     std::vector<cv::Vec3d> foundMarkersTvecs;
@@ -176,8 +212,13 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
                     recomputedRvec, recomputedTvec
             );
 
+            double markerLength = 0.05;
+            if (markerSizesMap.find(fixedMarkersIDs[fixedMarkerIndex]) != markerSizesMap.end()) {
+                markerLength = markerSizesMap[fixedMarkersIDs[fixedMarkerIndex]];
+            }
+
             cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs,
-                                recomputedRvec, recomputedTvec, 0.08);
+                                recomputedRvec, recomputedTvec, markerLength);
 
             positionTvecs.push_back(recomputedTvec);
             positionRvecs.push_back(recomputedRvec);

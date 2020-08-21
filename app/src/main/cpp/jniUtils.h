@@ -7,6 +7,7 @@
 
 #include <jni.h>
 #include <android/log.h>
+#include <unordered_map>
 
 #include <opencv2/core/core.hpp>
 
@@ -47,6 +48,32 @@ void pushJavaArrayToStdVector(
     }
 }
 
+template<
+        typename inputArrayT1,
+        typename inputArrayT2,
+        typename outputMapKeyT,
+        typename outputMapValueT
+>
+void populateMapFromJavaArrays(
+        JNIEnv *env,
+        inputArrayT1 inKeys,
+        inputArrayT2 inValues,
+        const std::function<outputMapKeyT *(JNIEnv *, inputArrayT1, jboolean *)> &keyBufferResolver,
+        const std::function<outputMapValueT *(JNIEnv *, inputArrayT2, jboolean *)> &valueBufferResolver,
+        std::unordered_map<outputMapKeyT, outputMapValueT> &outMap
+) {
+    int size = min(env->GetArrayLength(inKeys), env->GetArrayLength(inValues));
+
+    outMap.reserve(size);
+    jboolean isCopy = false;
+    outputMapKeyT *keyBuffer = keyBufferResolver(env, inKeys, &isCopy);
+    outputMapValueT *valueBuffer = valueBufferResolver(env, inValues, &isCopy);
+
+    for (int i = 0; i < size; i++) {
+        outMap[keyBuffer[i]] = valueBuffer[i];
+    }
+}
+
 void pushjDoubleArrayToVectorOfVec3ds(
         JNIEnv *env,
         jdoubleArray inArray,
@@ -70,5 +97,6 @@ void pushjDoubleArrayToVectorOfVec3ds(
             }
     );
 }
+
 
 #endif //ARUCOSLAM_JNIUTILS_H
