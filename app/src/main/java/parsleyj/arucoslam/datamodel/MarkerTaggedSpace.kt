@@ -44,6 +44,34 @@ class MarkerTaggedSpace(
 
             return MarkerTaggedSpace(dictionary, markers)
         }
+
+        fun threeStackedMarkers(
+            dictionary: ArucoDictionary,
+            ids: Triple<Int, Int, Int>,
+            markerLength: Double,
+            markerSeparation: Double
+        ): MarkerTaggedSpace {
+            return MarkerTaggedSpace(dictionary, listOf(
+                FixedMarker(
+                    ids.first, Pose3d(
+                        rVec = Vec3d(0.0, 0.0, 0.0),
+                        tVec = Vec3d(0.0, -markerLength - markerSeparation, 0.0)
+                    ), markerLength
+                ),
+                FixedMarker(
+                    ids.second, Pose3d(
+                        rVec = Vec3d(0.0, 0.0, 0.0),
+                        tVec = Vec3d(0.0, 0.0, 0.0)
+                    ), markerLength
+                ),
+                FixedMarker(
+                    ids.third, Pose3d(
+                        rVec = Vec3d(0.0, 0.0, 0.0),
+                        tVec = Vec3d(0.0, +markerLength + markerSeparation, 0.0)
+                    ), markerLength
+                )
+            ))
+        }
     }
 
 
@@ -53,5 +81,5 @@ class MarkerTaggedSpace(
 
     operator fun get(id: Int) = markerMap[id]
 
-    fun getMarkerSpecs(id:Int) = this[id]
+    fun getMarkerSpecs(id: Int) = this[id]
 }

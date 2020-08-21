@@ -13,7 +13,6 @@
 #include "jniUtils.h"
 #include "positionRansac.h"
 #include "map2d.h"
-#include "MarkerTaggedSpaceInterface.h"
 
 #include <opencv2/calib3d.hpp>
 #include <string>
@@ -69,7 +68,7 @@ Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
     std::vector<cv::Vec3d> rvecs, tvecs;
     cv::aruco::estimatePoseSingleMarkers(
             corners,
-            0.03,
+            0.08,
             cameraMatrix,
             distCoeffs,
             rvecs,
@@ -123,45 +122,50 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     std::vector<cv::Vec3d> fixedMarkersRvecs;
 
 
-    fromJavaArrayToStdVector<jintArray, jint, int>(
+    pushJavaArrayToStdVector<jintArray, jint, int>(
             env,
             fixed_markers,
             &JNIEnv::GetIntArrayElements,
             fixedMarkersIDs
     );
 
-    fromjDoubleArrayToVectorOfVec3ds(env, fixed_tvects, fixedMarkersTvecs);
-    fromjDoubleArrayToVectorOfVec3ds(env, fixed_rvects, fixedMarkersRvecs);
+    pushjDoubleArrayToVectorOfVec3ds(env, fixed_tvects, fixedMarkersTvecs);
+    pushjDoubleArrayToVectorOfVec3ds(env, fixed_rvects, fixedMarkersRvecs);
 
 
     std::vector<int> foundMarkersIDs;
     std::vector<cv::Vec3d> foundMarkersTvecs;
     std::vector<cv::Vec3d> foundMarkersRvecs;
-    fromJavaArrayToStdVector<jintArray, jint, int>(
+    pushJavaArrayToStdVector<jintArray, jint, int>(
             env,
             inMarkers,
             &JNIEnv::GetIntArrayElements,
-            foundMarkersIDs
+            foundMarkersIDs,
+            0,
+            foundPosesCount
     );
 
-    fromjDoubleArrayToVectorOfVec3ds(env, in_tvects, foundMarkersTvecs, 0, foundPosesCount);
-    fromjDoubleArrayToVectorOfVec3ds(env, in_rvects, foundMarkersRvecs, 0, foundPosesCount);
+    pushjDoubleArrayToVectorOfVec3ds(env, in_tvects, foundMarkersTvecs, 0, foundPosesCount);
+    pushjDoubleArrayToVectorOfVec3ds(env, in_rvects, foundMarkersRvecs, 0, foundPosesCount);
 
     std::vector<cv::Vec3d> positionRvecs;
     std::vector<cv::Vec3d> positionTvecs;
     cv::Mat tmpMat;
     cv::cvtColor(inputMat, tmpMat, CV_RGBA2RGB);
 
+    draw2DBoxFrame(tmpMat);
+
     for (int i = 0; i < foundMarkersIDs.size(); i++) {
         int foundMarkerID = foundMarkersIDs[i];
         auto findFixedMarkerIndex = std::find(fixedMarkersIDs.begin(), fixedMarkersIDs.end(),
                                               foundMarkerID);
-
+        double x, y, theta;
         if (findFixedMarkerIndex != fixedMarkersIDs.end()) {
             int fixedMarkerIndex = std::distance(fixedMarkersIDs.begin(), findFixedMarkerIndex);
 
             cv::Vec3d recomputedTvec;
             cv::Vec3d recomputedRvec;
+
 
             cv::composeRT(
                     // Transformation to switch from room's coord sys to marker's coord sys
@@ -173,10 +177,23 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
             );
 
             cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs,
-                                recomputedRvec, recomputedTvec, 0.03);
+                                recomputedRvec, recomputedTvec, 0.08);
 
             positionTvecs.push_back(recomputedTvec);
             positionRvecs.push_back(recomputedRvec);
+
+
+            fromRTvectsTo2Dpose(recomputedRvec, recomputedTvec, x, y, theta);
+            drawObjectPosition(tmpMat, x, y, theta,
+                               cv::Scalar(100, 0, 0), cv::MarkerTypes::MARKER_TILTED_CROSS, 5,
+                               10.0, cv::Scalar(100, 100, 100));
+
+            fromRTvectsTo2Dpose(fixedMarkersRvecs[fixedMarkerIndex],
+                                fixedMarkersTvecs[fixedMarkerIndex],
+                                x, y, theta);
+            drawObjectPosition(tmpMat, x, y, theta,
+                               cv::Scalar(0, 255, 0), cv::MarkerTypes::MARKER_SQUARE, 5,
+                               0.0);
         }
     }
     cv::cvtColor(tmpMat, inputMat, CV_RGB2RGBA);
@@ -185,6 +202,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     cv::Vec3d modelRvec, modelTvec;
     inliersCount = fitPositionModel(positionRvecs, positionTvecs,
                                     modelRvec, modelTvec);
+
 
     double estimatedX, estimatedY, estimatedTheta;
     fromRTvectsTo2Dpose(modelRvec, modelTvec, estimatedX, estimatedY, estimatedTheta);
@@ -198,7 +216,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
                 cv::Scalar(0, 0, 255));
 
 
-    drawCameraPosition(inputMat, estimatedX, estimatedY, estimatedTheta);
+    drawObjectPosition(inputMat, estimatedX, estimatedY, estimatedTheta);
     return inliersCount;
 }
 

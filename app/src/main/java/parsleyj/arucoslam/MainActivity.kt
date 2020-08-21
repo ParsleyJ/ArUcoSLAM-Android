@@ -44,13 +44,17 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
 
     private val calibSizeRatio = (480.0 / 720.0)//(864.0 / 1280.0)
 
-    private val arucoBoardFixedMarkers = MarkerTaggedSpace.arucoBoard(
-        dictionary = ArucoDictionary.DICT_6X6_250,
-        markersX = 8,
-        markersY = 5,
-        markerLength = 0.03,
-        markerSeparation = 0.006
+//    private val arucoBoardFixedMarkers = MarkerTaggedSpace.arucoBoard(
+//        dictionary = ArucoDictionary.DICT_6X6_250,
+//        markersX = 8,
+//        markersY = 5,
+//        markerLength = 0.0295,
+//        markerSeparation = 0.006
+//    )
+    private val arucoBoardFixedMarkers = MarkerTaggedSpace.threeStackedMarkers(
+        ArucoDictionary.DICT_6X6_250, Triple(4,5,6), 0.08, 0.0055
     )
+
     private val fixedMarkerIds = arucoBoardFixedMarkers.markers
         .map { it.markerId }
         .toIntArray()
@@ -59,9 +63,9 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         .flattenVecs()
         .toDoubleArray()
     private val fixedMarkerTvects = arucoBoardFixedMarkers.markers
-            .map { it.pose3d.translationVector }
-            .flattenVecs()
-            .toDoubleArray()
+        .map { it.pose3d.translationVector }
+        .flattenVecs()
+        .toDoubleArray()
 
     private fun setFoundCamParams() {
         cameraMatrix = getCameraMat()
@@ -209,48 +213,6 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                             foundTvecs
                         )
                         Log.v(TAG, "frame processed!")
-
-//                        putText(
-//                            outMat,
-//                            "RVECT(${
-//                            (foundRvecs[0] * 180.0 / Math.PI).roundToLong().toDouble().format(0, 4)
-//                            },${
-//                            (foundRvecs[1] * 180.0 / Math.PI).roundToLong().toDouble().format(0, 4)
-//                            },${
-//                            (foundRvecs[2] * 180.0 / Math.PI).roundToLong().toDouble().format(0, 4)
-//                            })",
-//                            Point(30.0, 30.0),
-//                            FONT_HERSHEY_COMPLEX_SMALL,
-//                            0.8,
-//                            Scalar(255.0, 50.0, 50.0),
-//                            1
-//                        )
-//
-//                        putText(
-//                            outMat,
-//                            "TVECT(${
-//                            (foundTvecs[0] * calibSizeRatio).format(7, 5)
-//                            },${
-//                            (foundTvecs[1] * calibSizeRatio).format(7, 5)
-//                            },${
-//                            (foundTvecs[2] * calibSizeRatio).format(7, 5)
-//                            })",
-//                            Point(30.0, 50.0),
-//                            FONT_HERSHEY_COMPLEX_SMALL,
-//                            0.8,
-//                            Scalar(255.0, 50.0, 50.0),
-//                            1
-//                        )
-//
-//                        putText(
-//                            outMat,
-//                            "ID = ${foundIDs[0]}",
-//                            Point(30.0, 70.0),
-//                            FONT_HERSHEY_COMPLEX_SMALL,
-//                            0.8,
-//                            Scalar(255.0, 50.0, 50.0),
-//                            1
-//                        )
 
                         if (foundPoses > 1) {
                             val estimatedPosition = DoubleArray(3) { 0.0 }

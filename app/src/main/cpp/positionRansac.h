@@ -8,6 +8,44 @@
 #include <opencv2/core/core.hpp>
 #include "utils.h"
 
+
+template<typename ITERABLE>
+double meanAngle(const ITERABLE &c) {
+    auto it = std::begin(c);
+    auto end = std::end(c);
+
+    double x = 0.0;
+    double y = 0.0;
+    while (it != end) {
+        x += cos(*it);
+        y += sin(*it);
+        it = std::next(it);
+    }
+
+    return atan2(y, x);
+}
+
+void computeAngleCentroid(
+        const std::vector<cv::Vec3d> &rvecs,
+        cv::Vec3d &angleCentroid
+) {
+    std::vector<double> tmp;
+    tmp.reserve(rvecs.size());
+    std::transform(rvecs.begin(), rvecs.end(), std::back_inserter(tmp),
+                   [&](cv::Vec3d v) { return v[0]; });
+    angleCentroid[0] = meanAngle(tmp);
+    tmp.clear();
+    std::transform(rvecs.begin(), rvecs.end(), std::back_inserter(tmp),
+                   [&](cv::Vec3d v) { return v[1]; });
+    angleCentroid[1] = meanAngle(tmp);
+    tmp.clear();
+    std::transform(rvecs.begin(), rvecs.end(), std::back_inserter(tmp),
+                   [&](cv::Vec3d v) { return v[2]; });
+    angleCentroid[2] = meanAngle(tmp);
+    tmp.clear();
+}
+
+
 void computeCentroid(
         const std::vector<cv::Vec3d> &vecs,
         cv::Vec3d &centre
@@ -25,10 +63,13 @@ void computeCentroid(
 void vectorRansac(
         const std::vector<cv::Vec3d> &vecs,
         cv::Vec3d &foundModel,
-        const std::function<double(const cv::Vec3d &, const cv::Vec3d &)> &distanceFunction,
         double inlierThreshold,
         uint maxN,
-        int &inliers
+        int &inliers,
+        const std::function<double(const cv::Vec3d &, const cv::Vec3d &)> &distanceFunction
+        = [](const cv::Vec3d &v1, const cv::Vec3d &v2) { return cv::norm(v1 - v2); },
+        const std::function<void(const std::vector<cv::Vec3d> &, cv::Vec3d &)> &centroidComputer
+        = &computeCentroid
 ) {
     if (vecs.empty()) {
         inliers = 0;
@@ -67,7 +108,7 @@ void vectorRansac(
         std::vector<cv::Vec3d> subset;
         randomSubset(vecs, subset, subSetSize);
         cv::Vec3d centroid;
-        computeCentroid(subset, centroid);
+        centroidComputer(subset, centroid);
         for (const auto &vec:vecs) {
             if (distanceFunction(centroid, vec) <= inlierThreshold) {
                 foundInliers.push_back(vec);
@@ -79,7 +120,7 @@ void vectorRansac(
     }
 
     inliers = bestInliers.size();
-    computeCentroid(bestInliers, foundModel);
+    centroidComputer(bestInliers, foundModel);
 }
 
 
@@ -90,16 +131,31 @@ int fitPositionModel(
         cv::Vec3d &modelTvec
 ) {
     int inliers = -1;
-    vectorRansac(rvecs, modelRvec, [&](const cv::Vec3d &p1, const cv::Vec3d &p2) {
-        return cv::norm(cv::Vec3d(
-                atan2(sin(p1[0] - p2[0]), cos(p1[0] - p2[0])),
-                atan2(sin(p1[1] - p2[1]), cos(p1[1] - p2[1])),
-                atan2(sin(p1[2] - p2[2]), cos(p1[2] - p2[2]))
-        ));
-    }, 0.05, 100, inliers);
-    vectorRansac(tvecs, modelTvec, [&](const cv::Vec3d &p1, const cv::Vec3d &p2) {
-        return cv::norm(p1 - p2);
-    }, 0.05, 100, inliers);
+
+    vectorRansac(
+            tvecs,
+            modelTvec,
+            0.05,
+            100,
+            inliers
+    );
+
+    constexpr double angleInlierThreshold = M_PI /8.0;
+    vectorRansac(
+            rvecs,
+            modelRvec,
+            angleInlierThreshold,
+            100,
+            inliers,
+            [&](const cv::Vec3d &p1, const cv::Vec3d &p2) {
+                return cv::norm(cv::Vec3d(
+                        atan2(sin(p1[0] - p2[0]), cos(p1[0] - p2[0])),
+                        atan2(sin(p1[1] - p2[1]), cos(p1[1] - p2[1])),
+                        atan2(sin(p1[2] - p2[2]), cos(p1[2] - p2[2]))
+                ));
+            },
+            &computeAngleCentroid
+    );
 
 //    computeCentroid(tvecs, tVec);
 //    computeCentroid(rvecs, modelRvec);
