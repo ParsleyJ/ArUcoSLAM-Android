@@ -20,6 +20,8 @@ import org.opencv.core.CvType
 import org.opencv.core.Mat
 import parsleyj.arucoslam.datamodel.ArucoDictionary
 import parsleyj.arucoslam.datamodel.MarkerTaggedSpace
+import parsleyj.arucoslam.datamodel.Pose3d
+import parsleyj.arucoslam.datamodel.Vec3d
 
 
 class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraViewListener2 {
@@ -44,31 +46,45 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
 
     private val calibSizeRatio = (480.0 / 720.0)//(864.0 / 1280.0)
 
-//    private val markerSpace = MarkerTaggedSpace.arucoBoard(
+    //    private val markerSpace = MarkerTaggedSpace.arucoBoard(
 //        dictionary = ArucoDictionary.DICT_6X6_250,
 //        markersX = 8,
 //        markersY = 5,
 //        markerLength = 0.0295,
 //        markerSeparation = 0.006
 //    )
-    private val markerSpace = MarkerTaggedSpace.threeStackedMarkers(
-        ArucoDictionary.DICT_6X6_250, Triple(4,5,6), 0.08, 0.0055
-    )
+    private val markerSpace by lazy {
+        MarkerTaggedSpace.threeStackedMarkers(
+            ArucoDictionary.DICT_6X6_250, 4, 5, 6, 0.079, 0.0055
+        ) + MarkerTaggedSpace.singleMarker(
+            ArucoDictionary.DICT_6X6_250, 0, 0.083, Pose3d(Vec3d.ORIGIN, Vec3d(+0.38, -0.079, -0.03))
+        ) + (MarkerTaggedSpace.arucoBoard(
+            ArucoDictionary.DICT_6X6_250, 8, 5, 0.0295, 0.006
+        ).movedTo(Vec3d(+0.166, -0.31, 0.0)) - list[0,4,5,6])
+    }
 
-    private val fixedMarkerIds = markerSpace.markers
-        .map { it.markerId }
-        .toIntArray()
-    private val fixedMarkerRvects = markerSpace.markers
-        .map { it.pose3d.rotationVector }
-        .flattenVecs()
-        .toDoubleArray()
-    private val fixedMarkerTvects = markerSpace.markers
-        .map { it.pose3d.translationVector }
-        .flattenVecs()
-        .toDoubleArray()
-    private val fixedMarkerLengths = markerSpace.markers
-        .map { it.markerSideLength }
-        .toDoubleArray()
+    private val fixedMarkerIds by lazy {
+        markerSpace.markers
+            .map { it.markerId }
+            .toIntArray()
+    }
+    private val fixedMarkerRvects by lazy {
+        markerSpace.markers
+            .map { it.pose3d.rotationVector }
+            .flattenVecs()
+            .toDoubleArray()
+    }
+    private val fixedMarkerTvects by lazy {
+        markerSpace.markers
+            .map { it.pose3d.translationVector }
+            .flattenVecs()
+            .toDoubleArray()
+    }
+    private val fixedMarkerLengths by lazy {
+        markerSpace.markers
+            .map { it.markerSideLength }
+            .toDoubleArray()
+    }
 
     private fun setFoundCamParams() {
         cameraMatrix = getCameraMat()
@@ -255,5 +271,6 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
 
     }
 }
+
 
 

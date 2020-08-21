@@ -9,8 +9,8 @@
 #include "utils.h"
 
 
-void draw2DBoxFrame(cv::Mat &_image){
-    int side = _image.rows /2;
+void draw2DBoxFrame(cv::Mat &_image) {
+    int side = _image.rows / 2;
     cv::Point2f origin((_image.cols - side / 2), _image.rows - side);
 
 // draw box
@@ -54,11 +54,26 @@ void drawObjectPosition(
     cv::Point2f position = origin + cv::Point2f(Xnew * aMeterInPixels, Ynew * aMeterInPixels);
     cv::drawMarker(_image, position, markerColor, markerType, markerSize);
 
-    if(arrowLength>0.0) {
+    if (arrowLength > 0.0) {
         double arrowHeadX = position.x + arrowLength * cos(theta + (3.0 / 2.0) * CV_PI);
         double arrowHeadY = position.y + arrowLength * sin(theta + (3.0 / 2.0) * CV_PI);
         cv::arrowedLine(_image, position, cv::Point2f(arrowHeadX, arrowHeadY), arrowColor);
     }
+}
+
+void drawCameraRoll(
+        cv::Mat &_image,
+        double rollTheta,
+        int arrowLength,
+        const cv::Scalar& color = cv::Scalar(0, 255, 255)
+) {
+    rollTheta = rollTheta * (90.0 / 130.0);
+    int side = _image.rows / 10;
+    cv::Point2f crossCenter = cv::Point2f(_image.cols - side, _image.rows - side);
+    double arrowHeadX = crossCenter.x + arrowLength * cos(rollTheta + (3.0 / 2.0) * CV_PI);
+    double arrowHeadY = crossCenter.y + arrowLength * sin(rollTheta + (3.0 / 2.0) * CV_PI);
+    cv::arrowedLine(_image, crossCenter, cv::Point2f(arrowHeadX, arrowHeadY), color);
+
 }
 
 void fromRTvectsTo2Dpose(

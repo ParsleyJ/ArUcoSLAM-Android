@@ -258,6 +258,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
 
 
     drawObjectPosition(inputMat, estimatedX, estimatedY, estimatedTheta);
+    drawCameraRoll(inputMat, modelRvec[1], 30);
     return inliersCount;
 }
 
@@ -587,3 +588,31 @@ Java_parsleyj_arucoslam_NativeMethods_calibrateChArUco(
 
 
 #pragma clang diagnostic pop
+extern "C"
+JNIEXPORT void JNICALL
+Java_parsleyj_arucoslam_NativeMethods_composeRT(
+        JNIEnv *env,
+        jclass clazz,
+        jdoubleArray in_rvec1,
+        jdoubleArray in_tvec1,
+        jdoubleArray in_rvec2,
+        jdoubleArray in_tvec2,
+        jdoubleArray out_rvec,
+        jdoubleArray out_tvec
+) {
+    cv::Vec3d rvec1, tvec1, rvec2, tvec2, rvec, tvec;
+    fromjDoubleArrayToVec3d(env, in_rvec1, rvec1);
+    fromjDoubleArrayToVec3d(env, in_tvec1, tvec1);
+    fromjDoubleArrayToVec3d(env, in_rvec2, rvec2);
+    fromjDoubleArrayToVec3d(env, in_tvec2, tvec2);
+    cv::composeRT(
+            rvec1,
+            tvec1,
+            rvec2,
+            tvec2,
+            rvec,
+            tvec
+    );
+    fromVec3dTojDoubleArray(env, tvec, out_tvec);
+    fromVec3dTojDoubleArray(env, rvec, out_rvec);
+}

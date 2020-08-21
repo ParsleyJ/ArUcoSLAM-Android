@@ -74,6 +74,22 @@ void populateMapFromJavaArrays(
     }
 }
 
+
+void getVec3dFromBuffer(const jdouble *buf, cv::Vec3d &outVec){
+    outVec[0] = buf[0];
+    outVec[1] = buf[1];
+    outVec[2] = buf[2];
+}
+
+void fromVec3dTojDoubleArray(JNIEnv* env, const cv::Vec3d& inVec, jdoubleArray outArray){
+    env->SetDoubleArrayRegion(outArray, 0, 3, inVec.val);
+}
+
+void fromjDoubleArrayToVec3d(JNIEnv* env, const jdoubleArray inArray, cv::Vec3d &outVec){
+    jboolean isCopy = false;
+    getVec3dFromBuffer(env->GetDoubleArrayElements(inArray, &isCopy), outVec);
+}
+
 void pushjDoubleArrayToVectorOfVec3ds(
         JNIEnv *env,
         jdoubleArray inArray,
@@ -90,11 +106,7 @@ void pushjDoubleArrayToVectorOfVec3ds(
             inputArrayOffset * 3,
             inputArrayElements * 3,
             3,
-            [&](const jdouble *buf, cv::Vec3d &outVec) {
-                outVec[0] = buf[0];
-                outVec[1] = buf[1];
-                outVec[2] = buf[2];
-            }
+            &getVec3dFromBuffer
     );
 }
 

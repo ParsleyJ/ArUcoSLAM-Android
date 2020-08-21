@@ -1,3 +1,5 @@
+@file:Suppress("ClassName")
+
 package parsleyj.arucoslam
 
 import kotlinx.coroutines.CoroutineScope
@@ -10,6 +12,17 @@ import java.nio.ByteOrder
 import java.nio.DoubleBuffer
 import java.nio.FloatBuffer
 
+
+object list
+object mutList
+
+operator fun <T> list.get(vararg values: T): List<T> {
+    return listOf(*values)
+}
+
+operator fun <T> mutList.get(vararg values: T): MutableList<T> {
+    return mutableListOf(*values)
+}
 
 
 val defaultDispatcher = CoroutineScope(Dispatchers.Default)
@@ -77,8 +90,7 @@ fun Double.format(digits: Int) = "%.${digits}f".format(this)
 fun Double.format(digits: Int, maxWidth: Int) = "%${maxWidth}.${digits}f".format(this)
 
 
-fun List<Vec3d>.flattenVecs():List<Double>{
-    return this.flatMap {
-        listOf(it.x, it.y, it.z)
-    }.toList()
+fun List<Vec3d>.flattenVecs(): List<Double> {
+    return this.flatMap { list[it.x, it.y, it.z] }.toList()
 }
+

@@ -60,4 +60,13 @@ public class NativeMethods {
             double[] newPosition
     );
 
+    public static native void composeRT(
+            double[] inRvec1,
+            double[] inTvec1,
+            double[] inRvec2,
+            double[] inTvec2,
+            double[] outRvec,
+            double[] outTvec
+    );
+
 }

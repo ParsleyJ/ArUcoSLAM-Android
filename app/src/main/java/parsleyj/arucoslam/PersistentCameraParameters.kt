@@ -27,11 +27,12 @@ object PersistentCameraParameters {
         }
         val cameraMatrixBuffer = DoubleBuffer.allocate(9)
 
-        listOf(
-            fX, 0.0, cX,
-            0.0, fY, cY,
-            0.0, 0.0, 1.0
-        ).withIndex().forEach { (index, value) -> cameraMatrixBuffer.put(index, value) }
+
+        list[
+                fX, 0.0, cX,
+                0.0, fY, cY,
+                0.0, 0.0, 1.0
+        ].withIndex().forEach { (index, value) -> cameraMatrixBuffer.put(index, value) }
 
         return Mat(3, 3, CvType.CV_64FC1, cameraMatrixBuffer.copyToNewByteBuffer())
     }

@@ -1,6 +1,10 @@
 package parsleyj.arucoslam.datamodel
 
 import android.util.Log
+import parsleyj.arucoslam.get
+import parsleyj.arucoslam.list
+import java.lang.RuntimeException
+import kotlin.contracts.contract
 
 class MarkerTaggedSpace(
     val dictionary: ArucoDictionary,
@@ -47,31 +51,43 @@ class MarkerTaggedSpace(
 
         fun threeStackedMarkers(
             dictionary: ArucoDictionary,
-            ids: Triple<Int, Int, Int>,
+            id1: Int,
+            id2: Int,
+            id3: Int,
             markerLength: Double,
             markerSeparation: Double
         ): MarkerTaggedSpace {
-            return MarkerTaggedSpace(dictionary, listOf(
-                FixedMarker(
-                    ids.first, Pose3d(
-                        rVec = Vec3d(0.0, 0.0, 0.0),
-                        tVec = Vec3d(0.0, -markerLength - markerSeparation, 0.0)
-                    ), markerLength
-                ),
-                FixedMarker(
-                    ids.second, Pose3d(
-                        rVec = Vec3d(0.0, 0.0, 0.0),
-                        tVec = Vec3d(0.0, 0.0, 0.0)
-                    ), markerLength
-                ),
-                FixedMarker(
-                    ids.third, Pose3d(
-                        rVec = Vec3d(0.0, 0.0, 0.0),
-                        tVec = Vec3d(0.0, +markerLength + markerSeparation, 0.0)
-                    ), markerLength
-                )
-            ))
+            return MarkerTaggedSpace(
+                dictionary, list[
+                        FixedMarker(
+                            id1, Pose3d(
+                                rVec = Vec3d(0.0, 0.0, 0.0),
+                                tVec = Vec3d(0.0, -markerLength - markerSeparation, 0.0)
+                            ), markerLength
+                        ),
+                        FixedMarker(
+                            id2, Pose3d(
+                                rVec = Vec3d(0.0, 0.0, 0.0),
+                                tVec = Vec3d(0.0, 0.0, 0.0)
+                            ), markerLength
+                        ),
+                        FixedMarker(
+                            id3, Pose3d(
+                                rVec = Vec3d(0.0, 0.0, 0.0),
+                                tVec = Vec3d(0.0, +markerLength + markerSeparation, 0.0)
+                            ), markerLength
+                        )
+                ]
+            )
         }
+
+        fun singleMarker(
+            dictionary: ArucoDictionary,
+            id: Int,
+            markerLength: Double,
+            markerPose: Pose3d
+        ) = MarkerTaggedSpace(dictionary, list[FixedMarker(id, markerPose, markerLength)])
+
     }
 
 
@@ -80,6 +96,46 @@ class MarkerTaggedSpace(
     }
 
     operator fun get(id: Int) = markerMap[id]
+
+    infix fun movedTo(translationVector: Vec3d): MarkerTaggedSpace {
+        return this movedTo Pose3d(Vec3d.ORIGIN, translationVector)
+    }
+
+    infix fun movedTo(pose: Pose3d): MarkerTaggedSpace {
+        return MarkerTaggedSpace(
+            dictionary,
+            markers.map { it movedTo pose }
+        )
+    }
+
+
+    operator fun plus(otherSpace: MarkerTaggedSpace): MarkerTaggedSpace {
+        if (otherSpace.dictionary != this.dictionary) {
+            throw RuntimeException(
+                "Cannot perform union of two marker tagged spaces " +
+                        "with different ArUco dictionaries"
+
+            )
+        }
+
+        val resultMarkers = mutableListOf<FixedMarker>()
+        resultMarkers.addAll(this.markers)
+        for (m in otherSpace.markers) {
+            if (resultMarkers.any { it.markerId == m.markerId && it != m }) {
+                throw RuntimeException(
+                    "Cannot perform union of two marker tagged spaces which contain markers with same" +
+                            "ids but different carachteristics"
+                )
+            }
+            resultMarkers.add(m)
+        }
+
+        return MarkerTaggedSpace(this.dictionary, resultMarkers)
+    }
+
+    operator fun minus(ids:Collection<Int>):MarkerTaggedSpace{
+        return MarkerTaggedSpace(dictionary, markers.filter { it.markerId !in ids })
+    }
 
     fun getMarkerSpecs(id: Int) = this[id]
 }
