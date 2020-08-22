@@ -16,12 +16,8 @@ import android.widget.Toast
 import kotlinx.android.synthetic.main.activity_main.*
 import org.opencv.android.FixedCameraBridgeViewBase
 import org.opencv.android.OpenCVLoader
-import org.opencv.core.CvType
 import org.opencv.core.Mat
-import parsleyj.arucoslam.datamodel.ArucoDictionary
-import parsleyj.arucoslam.datamodel.MarkerTaggedSpace
-import parsleyj.arucoslam.datamodel.Pose3d
-import parsleyj.arucoslam.datamodel.Vec3d
+import parsleyj.arucoslam.datamodel.*
 
 
 class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraViewListener2 {
@@ -32,19 +28,9 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         const val DETECTED_MARKERS_MAX_OUTPUT = 50
     }
 
-    // since Android GC deletes underlying data in field Mats, i use this property delegator
-    // to reload the correct data from storage/hardcoded data when the mats become corrupt.
-    private var cameraMatrix by CRCCheckedMat {
-//        PersistentCameraParameters.retrieveSavedCameraMatrix(applicationContext)
-        getCameraMat()
+    val cameraParameters: CalibData by lazy {
+        CalibData.xiaomiMiA1RearCamera
     }
-
-    private var distCoeffs by CRCCheckedMat {
-//        PersistentCameraParameters.retrieveSavedDistCoefficients(applicationContext)
-        getDistCoeffsMat()
-    }
-
-    private val calibSizeRatio = (480.0 / 720.0)//(864.0 / 1280.0)
 
     //    private val markerSpace = MarkerTaggedSpace.arucoBoard(
 //        dictionary = ArucoDictionary.DICT_6X6_250,
@@ -55,13 +41,47 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
 //    )
     private val markerSpace by lazy {
         MarkerTaggedSpace.threeStackedMarkers(
-            ArucoDictionary.DICT_6X6_250, 4, 5, 6, 0.079, 0.0055
+            dictionary = ArucoDictionary.DICT_6X6_250,
+            id1 = 4,
+            id2 = 5,
+            id3 = 6,
+            markerLength = 0.079,
+            markerSeparation = 0.0055
         ) + MarkerTaggedSpace.singleMarker(
-            ArucoDictionary.DICT_6X6_250, 0, 0.083, Pose3d(Vec3d.ORIGIN, Vec3d(+0.38, -0.079, -0.03))
+            dictionary = ArucoDictionary.DICT_6X6_250,
+            id = 0,
+            markerLength = 0.083
+        ).movedTo(
+            Vec3d(+0.38, -0.079, -0.03)
+        ) + MarkerTaggedSpace.singleMarker(
+            dictionary = ArucoDictionary.DICT_6X6_250,
+            id = 3,
+            markerLength = 0.079
+        ).movedTo(
+//            Pose3d(Vec3d(0.0, Math.PI/2.0, 0.0), Vec3d(-0.63/4.0,-0.084/2.0,+0.18/2.0))
+            Pose3d(Vec3d(0.0, Math.PI/2.0, 0.0), Vec3d(-0.18,-0.084,+0.63))
         ) + (MarkerTaggedSpace.arucoBoard(
-            ArucoDictionary.DICT_6X6_250, 8, 5, 0.0295, 0.006
-        ).movedTo(Vec3d(+0.166, -0.31, 0.0)) - list[0,4,5,6])
+            dictionary = ArucoDictionary.DICT_6X6_250,
+            markersX = 8,
+            markersY = 5,
+            markerLength = 0.0295,
+            markerSeparation = 0.006
+        ).movedTo(
+            Vec3d(+0.166, -0.31, 0.0)
+        ) - list[0, 3, 4, 5, 6])
     }
+
+//    private val markerSpace by lazy {
+//        MarkerTaggedSpace.singleMarker(
+//            dictionary = ArucoDictionary.DICT_6X6_250,
+//            id = 3,
+//            markerLength = 0.079
+//        )+ MarkerTaggedSpace.singleMarker(
+//            dictionary = ArucoDictionary.DICT_6X6_250,
+//            id = 2,
+//            markerLength = 0.079
+//        ).movedTo(Vec3d(0.0, -0.168, 0.0))
+//    }
 
     private val fixedMarkerIds by lazy {
         markerSpace.markers
@@ -86,33 +106,6 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
             .toDoubleArray()
     }
 
-    private fun setFoundCamParams() {
-        cameraMatrix = getCameraMat()
-        distCoeffs = getDistCoeffsMat()
-        PersistentCameraParameters.saveCameraParameters(this, cameraMatrix, distCoeffs)
-    }
-
-    private fun getCameraMat(): Mat {
-        return Mat(
-            3, 3, CvType.CV_64FC1, doubleArrayOf(
-                1032.8829095671827, 0.0, 633.4940320469335 * calibSizeRatio,
-                0.0, 1031.2002634811117, 353.94940985894704 * calibSizeRatio,
-                0.0, 0.0, 1.0
-            ).asDoubleBuffer().copyToNewByteBuffer()
-        )
-    }
-
-    private fun getDistCoeffsMat(): Mat {
-        return Mat(
-            1, 5, CvType.CV_64FC1, doubleArrayOf(
-                0.138768877522313,
-                -0.6601745137551255,
-                -0.0007624348695516956,
-                -0.000016450434278321715,
-                0.819925063225912
-            ).asDoubleBuffer().copyToNewByteBuffer()
-        )
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -133,8 +126,6 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         super.onResume()
         OpenCVLoader.initDebug()
         Log.i(TAG, "OpenCV loaded successfully")
-        setFoundCamParams()
-//        setCameraParameters(PersistentCameraParameters.loadCameraParameters(applicationContext))
         System.loadLibrary("gnustl_shared")
         System.loadLibrary("native-lib")
         System.loadLibrary("nonfree")
@@ -143,32 +134,18 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
-        // Inflate the menu; this adds items to the action bar if it is present.
         menuInflater.inflate(R.menu.main_menu, menu)
         return true
     }
 
-    override fun onOptionsItemSelected(item: MenuItem) =
-        when (item.itemId) {
-            R.id.action_start_calibration -> {
-                startActivityForResult(Intent(this, CalibActivity::class.java), CALIBRATION_REQUEST)
-                true
-            }
-            R.id.action_run_gc -> {
-                guiExec {
-                    Toast.makeText(this, "" + distCoeffs?.dump(), Toast.LENGTH_SHORT).show()
-                    setFoundCamParams()
-                }
+    override fun onOptionsItemSelected(item: MenuItem) = when (item.itemId) {
+        else -> super.onOptionsItemSelected(item)
+    }
 
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
-
-    private fun setCameraParameters(pair: Pair<Mat?, Mat?>) {
-        val (cm, dcs) = pair
-        cameraMatrix = cm
-        distCoeffs = dcs
+    private fun setCameraParameters(calibData: CalibData?) {
+        val cm = calibData?.cameraMatrix
+        val dcs = calibData?.distCoeffs
+//        this.cameraParameters = calibData
         Log.i(TAG, "Returned from calibration. cameraMatrix = $cm")
         Log.i(TAG, "Returned from calibration. distCoeffs   = $dcs")
     }
@@ -177,7 +154,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         when (requestCode) {
             CALIBRATION_REQUEST -> {
                 setCameraParameters(
-                    PersistentCameraParameters.loadCameraParameters(
+                    CalibData.loadCameraParameters(
                         applicationContext
                     )
                 )
@@ -187,9 +164,9 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         }
 
     override fun onCameraViewStarted(width: Int, height: Int) {
-        if (cameraMatrix == null || distCoeffs == null) {
-            startActivityForResult(Intent(this, CalibActivity::class.java), CALIBRATION_REQUEST)
-        }
+//        if (cameraParameters==null) {
+//            startActivityForResult(Intent(this, CalibActivity::class.java), CALIBRATION_REQUEST)
+//        }
     }
 
     override fun onCameraViewStopped() {
@@ -219,43 +196,40 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                     2 // number of parallel processors on frames
                 ) { inMat, outMat, foundIDs, foundRvecs, foundTvecs ->
 
-                    if (cameraMatrix != null && distCoeffs != null) {
+                    val foundPoses = NativeMethods.processCameraFrame(
+                        cameraParameters.cameraMatrix.nativeObjAddr,
+                        cameraParameters.distCoeffs.nativeObjAddr,
+                        inMat.nativeObjAddr,
+                        outMat.nativeObjAddr,
+                        fixedMarkerIds,
+                        fixedMarkerLengths,
+                        DETECTED_MARKERS_MAX_OUTPUT,
+                        foundIDs,
+                        foundRvecs,
+                        foundTvecs
+                    )
+                    Log.v(TAG, "frame processed!")
 
-                        val foundPoses = NativeMethods.processCameraFrame(
-                            cameraMatrix!!.nativeObjAddr,
-                            distCoeffs!!.nativeObjAddr,
-                            inMat.nativeObjAddr,
+                    if (foundPoses > 0) {
+                        val estimatedPosition = DoubleArray(3) { 0.0 }
+
+
+                        val inliersCount = NativeMethods.estimateCameraPosition(
+                            cameraParameters.cameraMatrix.nativeObjAddr,
+                            cameraParameters.distCoeffs.nativeObjAddr,
                             outMat.nativeObjAddr,
                             fixedMarkerIds,
+                            fixedMarkerRvects,
+                            fixedMarkerTvects,
                             fixedMarkerLengths,
-                            DETECTED_MARKERS_MAX_OUTPUT,
+                            foundPoses,
                             foundIDs,
                             foundRvecs,
-                            foundTvecs
+                            foundTvecs,
+                            null,
+                            null,
+                            estimatedPosition
                         )
-                        Log.v(TAG, "frame processed!")
-
-                        if (foundPoses > 1) {
-                            val estimatedPosition = DoubleArray(3) { 0.0 }
-
-
-                            val inliersCount = NativeMethods.estimateCameraPosition(
-                                cameraMatrix!!.nativeObjAddr,
-                                distCoeffs!!.nativeObjAddr,
-                                outMat.nativeObjAddr,
-                                fixedMarkerIds,
-                                fixedMarkerRvects,
-                                fixedMarkerTvects,
-                                fixedMarkerLengths,
-                                foundPoses,
-                                foundIDs,
-                                foundRvecs,
-                                foundTvecs,
-                                null,
-                                null,
-                                estimatedPosition
-                            )
-                        }
                     }
                 }
             }

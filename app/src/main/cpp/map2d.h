@@ -41,14 +41,14 @@ void drawObjectPosition(
 ) {
 
     int side = _image.rows / 2;
-    double areaSide = 2; //meters
+    double areaSide = 1.5; //meters
     cv::Point2f origin((_image.cols - side / 2), _image.rows - side);
     double aMeterInPixels = (double) side / areaSide;
 
 
     double Xnew = X * cos(theta) - Y * sin(theta);
     double Ynew = X * sin(theta) + Y * cos(theta);
-    __android_log_print(ANDROID_LOG_DEBUG, "BOHBOHBOHBOHBOHBOHBOHBOH",
+    __android_log_print(ANDROID_LOG_DEBUG, "drawObjectPosition",
                         "position=(%f, %f); theta=%f",
                         Xnew * aMeterInPixels, Ynew * aMeterInPixels, theta);
     cv::Point2f position = origin + cv::Point2f(Xnew * aMeterInPixels, Ynew * aMeterInPixels);
@@ -67,7 +67,7 @@ void drawCameraRoll(
         int arrowLength,
         const cv::Scalar& color = cv::Scalar(0, 255, 255)
 ) {
-    rollTheta = rollTheta * (90.0 / 130.0);
+    rollTheta = -rollTheta * (90.0 / 130.0);
     int side = _image.rows / 10;
     cv::Point2f crossCenter = cv::Point2f(_image.cols - side, _image.rows - side);
     double arrowHeadX = crossCenter.x + arrowLength * cos(rollTheta + (3.0 / 2.0) * CV_PI);
@@ -85,8 +85,8 @@ void fromRTvectsTo2Dpose(
 ) {
 
     resultAngle = (rVec[0] < 0.0 ? -1.0 : 1.0) * rVec[2] * (90.0 / 130.0);
-    resultX = -tVec[0] * calibSizeRatio;
-    resultY = tVec[2] * calibSizeRatio;
+    resultX = -tVec[0]; //* calibSizeRatio;
+    resultY = tVec[2]; //* calibSizeRatio;
 }
 
 

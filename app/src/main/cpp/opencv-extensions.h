@@ -34,7 +34,7 @@ void estimatePoseSingleMarkers(cv::InputArrayOfArrays _corners, const std::vecto
 
     cv::Mat rvecs = _rvecs.getMat(), tvecs = _tvecs.getMat();
 
-    //// for each marker, calculate its pose
+    // for each marker, calculate its pose
     parallel_for_(cv::Range(0, nMarkers), [&](const cv::Range &range) {
         const int begin = range.start;
         const int end = range.end;

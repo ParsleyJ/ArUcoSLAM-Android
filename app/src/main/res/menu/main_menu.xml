@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
-    <item
-        android:id="@+id/action_start_calibration"
-        android:icon="@drawable/ic_radio_button_checked_white_24dp"
-        app:showAsAction="always"
-        android:title="Start Calibration">
-    </item>
-    <item
-        android:id="@+id/action_run_gc"
-        android:icon="@drawable/ic_repeat_white_24dp"
-        app:showAsAction="always"
-        android:title="Run GC">
-    </item>
+<!--    <item-->
+<!--        android:id="@+id/action_start_calibration"-->
+<!--        android:icon="@drawable/ic_radio_button_checked_white_24dp"-->
+<!--        app:showAsAction="always"-->
+<!--        android:title="Start Calibration">-->
+<!--    </item>-->
+<!--    <item-->
+<!--        android:id="@+id/action_run_gc"-->
+<!--        android:icon="@drawable/ic_repeat_white_24dp"-->
+<!--        app:showAsAction="always"-->
+<!--        android:title="Run GC">-->
+<!--    </item>-->
 </menu>

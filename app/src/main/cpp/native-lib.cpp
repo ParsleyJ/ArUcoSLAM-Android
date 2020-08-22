@@ -101,7 +101,9 @@ Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
             cameraMatrix, distCoeffs,
             rvecs, tvecs);
 
+
     for (int i = 0; i < min(int(rvecs.size()), maxMarkers); i++) {
+//    p_for(i, min(int(rvecs.size()), maxMarkers)) {
         auto rvec = rvecs[i];
         auto tvec = tvecs[i];
 
@@ -191,7 +193,9 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
 
     draw2DBoxFrame(tmpMat);
 
-    for (int i = 0; i < foundMarkersIDs.size(); i++) {
+    std::mutex mut;
+//    for (int i = 0; i < foundMarkersIDs.size(); i++) {
+    p_for(i, foundMarkersIDs.size()) {
         int foundMarkerID = foundMarkersIDs[i];
         auto findFixedMarkerIndex = std::find(fixedMarkersIDs.begin(), fixedMarkersIDs.end(),
                                               foundMarkerID);
@@ -220,8 +224,12 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
             cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs,
                                 recomputedRvec, recomputedTvec, markerLength);
 
-            positionTvecs.push_back(recomputedTvec);
-            positionRvecs.push_back(recomputedRvec);
+            {
+                std::unique_lock<std::mutex> ul(mut);
+
+                positionTvecs.push_back(recomputedTvec);
+                positionRvecs.push_back(recomputedRvec);
+            }
 
 
             fromRTvectsTo2Dpose(recomputedRvec, recomputedTvec, x, y, theta);
@@ -232,11 +240,14 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
             fromRTvectsTo2Dpose(fixedMarkersRvecs[fixedMarkerIndex],
                                 fixedMarkersTvecs[fixedMarkerIndex],
                                 x, y, theta);
+            
+
             drawObjectPosition(tmpMat, x, y, theta,
                                cv::Scalar(0, 255, 0), cv::MarkerTypes::MARKER_SQUARE, 5,
                                0.0);
         }
-    }
+    };
+
     cv::cvtColor(tmpMat, inputMat, CV_RGB2RGBA);
 
     int inliersCount;

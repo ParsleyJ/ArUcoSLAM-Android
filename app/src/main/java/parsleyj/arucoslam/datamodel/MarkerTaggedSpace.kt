@@ -84,9 +84,11 @@ class MarkerTaggedSpace(
         fun singleMarker(
             dictionary: ArucoDictionary,
             id: Int,
-            markerLength: Double,
-            markerPose: Pose3d
-        ) = MarkerTaggedSpace(dictionary, list[FixedMarker(id, markerPose, markerLength)])
+            markerLength: Double
+        ) = MarkerTaggedSpace(
+            dictionary,
+            list[FixedMarker(id, Pose3d(Vec3d.ORIGIN, Vec3d.ORIGIN), markerLength)]
+        )
 
     }
 

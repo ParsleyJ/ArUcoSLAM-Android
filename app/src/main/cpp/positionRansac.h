@@ -5,6 +5,7 @@
 #ifndef ARUCOSLAM_POSITIONRANSAC_H
 #define ARUCOSLAM_POSITIONRANSAC_H
 
+#include <mutex>
 #include <opencv2/core/core.hpp>
 #include "utils.h"
 
@@ -64,6 +65,7 @@ void vectorRansac(
         const std::vector<cv::Vec3d> &vecs,
         cv::Vec3d &foundModel,
         double inlierThreshold,
+        double outlierProbability,
         uint maxN,
         int &inliers,
         const std::function<double(const cv::Vec3d &, const cv::Vec3d &)> &distanceFunction
@@ -80,19 +82,21 @@ void vectorRansac(
         foundModel = vecs[0];
         return;
     }
+    if(vecs.size() == 2){
+        inliers = 2;
+        computeCentroid(vecs, foundModel);
+    }
     size_t subSetSize;
-    if (vecs.size() <= 4) {
-        subSetSize = 1;
-    } else if (vecs.size() <= 10) {
+    if (vecs.size() <= 10) {
         subSetSize = 2;
     } else {
         subSetSize = 5;
     }
 
     // target probability to get a subset which generates a model without outliers
-    double prob = 0.8;
+    double prob = 0.9;
 
-    uint attempts = log(1.0 - prob) / log(1.0 - pow(1.0 - M_E, double(subSetSize)));
+    uint attempts = log(1.0 - prob) / log(1.0 - pow(1.0 - outlierProbability, double(subSetSize)));
     if (attempts == 0) {
         attempts = 1;
     }
@@ -102,7 +106,9 @@ void vectorRansac(
 
 
     std::vector<cv::Vec3d> bestInliers;
-    for (int attempt_I = 0; attempt_I < attempts; attempt_I++) {
+    std::mutex mut;
+
+    p_for(attempt_I, attempts) {
         std::vector<cv::Vec3d> foundInliers;
         foundInliers.reserve(vecs.size());
         std::vector<cv::Vec3d> subset;
@@ -114,10 +120,15 @@ void vectorRansac(
                 foundInliers.push_back(vec);
             }
         }
-        if (attempt_I == 0 || foundInliers.size() > bestInliers.size()) {
-            bestInliers = foundInliers;
+
+        {
+            std::unique_lock<std::mutex> ul(mut);
+
+            if (foundInliers.size() > bestInliers.size()) {
+                bestInliers = foundInliers;
+            }
         }
-    }
+    };
 
     inliers = bestInliers.size();
     centroidComputer(bestInliers, foundModel);
@@ -136,15 +147,17 @@ int fitPositionModel(
             tvecs,
             modelTvec,
             0.05,
+            0.1,
             100,
             inliers
     );
 
-    constexpr double angleInlierThreshold = M_PI /8.0;
+    constexpr double angleInlierThreshold = M_PI / 8.0;
     vectorRansac(
             rvecs,
             modelRvec,
             angleInlierThreshold,
+            0.1,
             100,
             inliers,
             [&](const cv::Vec3d &p1, const cv::Vec3d &p2) {
@@ -157,8 +170,6 @@ int fitPositionModel(
             &computeAngleCentroid
     );
 
-//    computeCentroid(tvecs, tVec);
-//    computeCentroid(rvecs, modelRvec);
     return inliers;
 }
 
