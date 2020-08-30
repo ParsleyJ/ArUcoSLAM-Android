@@ -135,3 +135,4 @@ operator fun DoubleArray.set(vararg indices:Int, takeValuesFrom: Iterable<Double
 fun List<Vec3d>.flattenVecs(): List<Double> {
     return this.flatMap { list[it.x, it.y, it.z] }
 }
+

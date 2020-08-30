@@ -28,36 +28,50 @@ double meanAngle(const ITERABLE &c) {
 
 void computeAngleCentroid(
         const std::vector<cv::Vec3d> &rvecs,
-        cv::Vec3d &angleCentroid
+        cv::Vec3d &angleCentroid,
+        std::vector<double> weights = std::vector<double>()
 ) {
     std::vector<double> tmp;
     tmp.reserve(rvecs.size());
-    std::transform(rvecs.begin(), rvecs.end(), std::back_inserter(tmp),
-                   [&](cv::Vec3d v) { return v[0]; });
-    angleCentroid[0] = meanAngle(tmp);
-    tmp.clear();
-    std::transform(rvecs.begin(), rvecs.end(), std::back_inserter(tmp),
-                   [&](cv::Vec3d v) { return v[1]; });
-    angleCentroid[1] = meanAngle(tmp);
-    tmp.clear();
-    std::transform(rvecs.begin(), rvecs.end(), std::back_inserter(tmp),
-                   [&](cv::Vec3d v) { return v[2]; });
-    angleCentroid[2] = meanAngle(tmp);
-    tmp.clear();
+
+    std::function<double(int)> getWeight = [&](int i) {
+        if (weights.size() <= i) {
+            return 1.0;
+        } else {
+            return weights[i];
+        }
+    };
+
+    for (int j = 0; j < 3; j++) {
+        for (int i = 0; i < rvecs.size(); i++) {
+            tmp.push_back(rvecs[i][j] * getWeight(i));
+        }
+        angleCentroid[j] = meanAngle(tmp);
+        tmp.clear();
+    }
 }
 
 
 void computeCentroid(
         const std::vector<cv::Vec3d> &vecs,
-        cv::Vec3d &centre
+        cv::Vec3d &centre,
+        const std::vector<double> &weights = std::vector<double>()
 ) {
+    std::function<double(int)> getWeight = [&](int i) {
+        if (weights.size() <= i) {
+            return 1.0;
+        } else {
+            return weights[i];
+        }
+    };
+
     centre[0] = 0;
     centre[1] = 0;
     centre[2] = 0;
-    for (const auto &vect: vecs) {
-        centre[0] += vect[0] / double(vecs.size());
-        centre[1] += vect[1] / double(vecs.size());
-        centre[2] += vect[2] / double(vecs.size());
+    for (int i = 0; i < vecs.size(); i++) {
+        centre[0] += vecs[i][0] * getWeight(i) / double(vecs.size());
+        centre[1] += vecs[i][1] * getWeight(i) / double(vecs.size());
+        centre[2] += vecs[i][2] * getWeight(i) / double(vecs.size());
     }
 }
 
@@ -68,23 +82,35 @@ void vectorRansac(
         double outlierProbability,
         uint maxN,
         int &inliers,
+        const std::vector<double> &weights
+        = std::vector<double>(),
         const std::function<double(const cv::Vec3d &, const cv::Vec3d &)> &distanceFunction
         = [](const cv::Vec3d &v1, const cv::Vec3d &v2) { return cv::norm(v1 - v2); },
-        const std::function<void(const std::vector<cv::Vec3d> &, cv::Vec3d &)> &centroidComputer
+        const std::function<void(const std::vector<cv::Vec3d> &,
+                                 cv::Vec3d &, const std::vector<double> &)> &centroidComputer
         = &computeCentroid
 ) {
+
+    std::function<double(int)> getWeight = [&](int i) {
+        if (weights.size() <= i) {
+            return 1.0;
+        } else {
+            return weights[i];
+        }
+    };
+
     if (vecs.empty()) {
         inliers = 0;
         return;
     }
     if (vecs.size() == 1) {
         inliers = 1;
-        foundModel = vecs[0];
+        foundModel = getWeight(0) * vecs[0];
         return;
     }
-    if(vecs.size() == 2){
+    if (vecs.size() == 2) {
         inliers = 2;
-        computeCentroid(vecs, foundModel);
+        computeCentroid(vecs, foundModel, weights);
     }
     size_t subSetSize;
     if (vecs.size() <= 10) {
@@ -106,32 +132,47 @@ void vectorRansac(
 
 
     std::vector<cv::Vec3d> bestInliers;
-    std::mutex mut;
+    std::vector<double> bestWeigths;
+
 
     p_for(attempt_I, attempts) {
         std::vector<cv::Vec3d> foundInliers;
+        std::vector<double> foundWeights;
         foundInliers.reserve(vecs.size());
+        foundWeights.reserve(vecs.size());
+
+        std::vector<int> subsetOfIndices;
+        randomUniqueIndices(vecs.size(), subSetSize, subsetOfIndices);
+
         std::vector<cv::Vec3d> subset;
-        randomSubset(vecs, subset, subSetSize);
+        std::vector<double> weightsSubset;
+        for (auto i : subsetOfIndices) {
+            subset.push_back(vecs[i]);
+            weightsSubset.push_back(getWeight(i));
+        }
+
         cv::Vec3d centroid;
-        centroidComputer(subset, centroid);
-        for (const auto &vec:vecs) {
+        centroidComputer(subset, centroid, weightsSubset);
+        for (int i = 0; i < vecs.size(); i++) {
+            const cv::Vec3d &vec = vecs[i];
             if (distanceFunction(centroid, vec) <= inlierThreshold) {
                 foundInliers.push_back(vec);
+                foundWeights.push_back(getWeight(i));
             }
         }
 
-        {
-            std::unique_lock<std::mutex> ul(mut);
+        p_for_criticalSectionBegin
 
             if (foundInliers.size() > bestInliers.size()) {
                 bestInliers = foundInliers;
+                bestWeigths = foundWeights;
             }
-        }
+
+        p_for_criticalSectionEnd
     };
 
     inliers = bestInliers.size();
-    centroidComputer(bestInliers, foundModel);
+    centroidComputer(bestInliers, foundModel, bestWeigths);
 }
 
 
@@ -139,7 +180,8 @@ int fitPositionModel(
         const std::vector<cv::Vec3d> &rvecs,
         const std::vector<cv::Vec3d> &tvecs,
         cv::Vec3d &modelRvec,
-        cv::Vec3d &modelTvec
+        cv::Vec3d &modelTvec,
+        const std::vector<double> &confidences = std::vector<double>()
 ) {
     int inliers = -1;
 
@@ -149,7 +191,8 @@ int fitPositionModel(
             0.05,
             0.1,
             100,
-            inliers
+            inliers,
+            confidences
     );
 
     constexpr double angleInlierThreshold = M_PI / 8.0;
@@ -160,6 +203,7 @@ int fitPositionModel(
             0.1,
             100,
             inliers,
+            confidences,
             [&](const cv::Vec3d &p1, const cv::Vec3d &p2) {
                 return cv::norm(cv::Vec3d(
                         atan2(sin(p1[0] - p2[0]), cos(p1[0] - p2[0])),

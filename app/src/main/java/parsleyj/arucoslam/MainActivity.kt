@@ -19,7 +19,10 @@ import kotlinx.android.synthetic.main.activity_main.*
 import org.opencv.android.FixedCameraBridgeViewBase
 import org.opencv.android.OpenCVLoader
 import org.opencv.core.Mat
+import org.parsleyj.kotutils.itMap
 import parsleyj.arucoslam.datamodel.*
+import parsleyj.arucoslam.datamodel.fixedSpace.MarkerTaggedSpace
+import parsleyj.arucoslam.datamodel.slamspace.SLAMSpace
 
 
 class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraViewListener2 {
@@ -30,46 +33,43 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         const val DETECTED_MARKERS_MAX_OUTPUT = 50
     }
 
-    val cameraParameters: CalibData by lazy {
+    private val cameraParameters: CalibData by lazy {
         CalibData.xiaomiMiA1RearCamera
     }
 
     private lateinit var frameStreamProcessor: FrameStreamProcessor<FrameRecyclableData>
 
 
-    private var markerSpace = MarkerTaggedSpace.singleMarker(
-        dictionary = ArucoDictionary.DICT_6X6_250,
-        id = 3,
-        markerLength = 0.079
-    )
+    private val markerSpace by lazy {
+        MarkerTaggedSpace.singleMarker(
+            dictionary = ArucoDictionary.DICT_6X6_250,
+            id = 3,
+            markerLength = 0.079
+        ).toSLAMSpace()
+    }
 
-
-    private val fixedMarkerIds: IntArray
+    //TODO do it only when marker space changes.
+    private val fixedMarkerIds
         get() = markerSpace.markers
             .map { it.markerId }
             .toIntArray()
 
-
-    private val fixedMarkerRvects: DoubleArray
+    private val fixedMarkerRvects
         get() = markerSpace.markers
             .map { it.pose3d.rotationVector }
             .flattenVecs()
             .toDoubleArray()
 
-
-    private val fixedMarkerTvects: DoubleArray
+    private val fixedMarkerTvects
         get() = markerSpace.markers
             .map { it.pose3d.translationVector }
             .flattenVecs()
             .toDoubleArray()
 
-
-    private val fixedMarkerLengths by lazy {
-        markerSpace.markers
-            .map { it.markerSideLength }
+    private val fixedMarkerConfidences
+        get() = markerSpace.markers
+            .map {it.markerConfidence }
             .toDoubleArray()
-    }
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -150,7 +150,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     data class FrameRecyclableData(
         val foundIDs: IntArray,
         val foundRVecs: DoubleArray,
-        val foundTVecs: DoubleArray
+        val foundTVecs: DoubleArray,
     ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -174,8 +174,6 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     }
 
 
-
-
     override fun onCameraFrame(inputFrame: FixedCameraBridgeViewBase.CvCameraViewFrame?): Mat? {
         if (inputFrame != null) {
             Log.v(TAG, "inputFrame != null")
@@ -187,7 +185,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                     inputMat.type(),
                     3, // number of parallel processors on frames
                     instantiateOtherData = { // lambda that tells the FrameStreamProcessor how
-                                             //  to create a recyclable support data structure
+                        //  to create a recyclable support data structure
                         FrameRecyclableData(
                             foundIDs = IntArray(DETECTED_MARKERS_MAX_OUTPUT) { 0 },
                             foundRVecs = DoubleArray(DETECTED_MARKERS_MAX_OUTPUT * 3) { 0.0 },
@@ -196,38 +194,38 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                     }
                 ) { inMat, outMat, (foundIDs, foundRvecs, foundTvecs) ->
 
-                    val foundPoses = NativeMethods.processCameraFrame(
+                    val foundPosesCount = NativeMethods.detectMarkers(
                         cameraParameters.cameraMatrix.nativeObjAddr,
                         cameraParameters.distCoeffs.nativeObjAddr,
                         inMat.nativeObjAddr,
                         outMat.nativeObjAddr,
-                        fixedMarkerIds,
-                        fixedMarkerLengths,
+                        0.079,
                         DETECTED_MARKERS_MAX_OUTPUT,
                         foundIDs,
                         foundRvecs,
                         foundTvecs
                     )
-                    Log.v(TAG, "frame processed!")
 
-                    if (foundPoses > 0) {
-                        val estimatedPosition = DoubleArray(3) { 0.0 }
+
+                    if (foundPosesCount > 0) {
+                        val estimatedPositionRVec = DoubleArray(3) { 0.0 }
+                        val estimatedPositionTVec = DoubleArray(3) { 0.0 }
 
                         val inliersCount = NativeMethods.estimateCameraPosition(
-                            cameraParameters.cameraMatrix.nativeObjAddr,
-                            cameraParameters.distCoeffs.nativeObjAddr,
-                            outMat.nativeObjAddr,
-                            fixedMarkerIds,
-                            fixedMarkerRvects,
-                            fixedMarkerTvects,
-                            fixedMarkerLengths,
-                            foundPoses,
-                            foundIDs,
-                            foundRvecs,
-                            foundTvecs,
-                            null,
-                            null,
-                            estimatedPosition
+                            cameraParameters.cameraMatrix.nativeObjAddr, //in
+                            cameraParameters.distCoeffs.nativeObjAddr, //in
+                            outMat.nativeObjAddr, //in&out
+                            fixedMarkerIds, //in
+                            fixedMarkerRvects, //in
+                            fixedMarkerTvects, //in
+                            fixedMarkerConfidences, //in
+                            markerSpace.commonLength, //in
+                            foundPosesCount, //in
+                            foundIDs, //in
+                            foundRvecs, //in
+                            foundTvecs, //in
+                            estimatedPositionRVec, //out
+                            estimatedPositionTVec //out
                         )
                     }
                 }
@@ -238,12 +236,13 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
             Log.d(TAG, "FrameStream usage = ${frameStreamProcessor.usage()}")
             return frameStreamProcessor.retrieve()
         } else {
-//            Log.v(TAG, "inputFrame is null, returning null to view")
             return null
         }
 
     }
 }
+
+
 
 
 

@@ -1,4 +1,7 @@
-package parsleyj.arucoslam.datamodel
+package parsleyj.arucoslam.datamodel.fixedSpace
+
+import parsleyj.arucoslam.datamodel.Pose3d
+import parsleyj.arucoslam.datamodel.Vec3d
 
 data class FixedMarker(
     val markerId: Int,

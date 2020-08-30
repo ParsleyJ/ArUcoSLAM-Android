@@ -1,10 +1,14 @@
-package parsleyj.arucoslam.datamodel
+package parsleyj.arucoslam.datamodel.fixedSpace
 
 import android.util.Log
+import parsleyj.arucoslam.datamodel.ArucoDictionary
+import parsleyj.arucoslam.datamodel.Pose3d
+import parsleyj.arucoslam.datamodel.Vec3d
+import parsleyj.arucoslam.datamodel.slamspace.SLAMMarker
+import parsleyj.arucoslam.datamodel.slamspace.SLAMSpace
 import parsleyj.arucoslam.get
 import parsleyj.arucoslam.list
 import java.lang.RuntimeException
-import kotlin.contracts.contract
 
 class MarkerTaggedSpace(
     val dictionary: ArucoDictionary,
@@ -135,9 +139,21 @@ class MarkerTaggedSpace(
         return MarkerTaggedSpace(this.dictionary, resultMarkers)
     }
 
-    operator fun minus(ids:Collection<Int>):MarkerTaggedSpace{
+    operator fun minus(ids:Collection<Int>): MarkerTaggedSpace {
         return MarkerTaggedSpace(dictionary, markers.filter { it.markerId !in ids })
     }
 
     fun getMarkerSpecs(id: Int) = this[id]
+
+    fun toSLAMSpace(commonLength: Double = -1.0): SLAMSpace {
+        return SLAMSpace(
+            dictionary,
+            if(commonLength<=0) {
+                markers.firstOrNull()?.markerSideLength?:0.1
+            } else {
+                commonLength
+            },
+            markers.map{ SLAMMarker(it.markerId, it.pose3d, 1.0) }
+        )
+    }
 }

@@ -9,6 +9,7 @@
 #include <android/log.h>
 
 #include <opencv2/core/core.hpp>
+#include <mutex>
 
 
 #define declareAndInitMat(T, varName, rows, cols, cvType, ...) cv::Mat  varName = (cv::Mat_<T>(rows, cols, cvType) << __VA_ARGS__)
@@ -31,16 +32,25 @@
  * but with the iterations executed in a pool of threads managed by OpenCV.
  * The binary operator |= has been overloaded in order to accept an integer and a lambda to
  * implement this.
+ *
+ * This p_for comes with an "implicit mutex parameter" (__p_for_mutex).
+ * Use p_for_criticalSectionBegin e p_for_criticalSectionEnd to delimit a critical section inside
+ * the p_for construct.
  */
-#define p_for(varName, howManyIterations) (howManyIterations) |= [&](int (varName))
+#define p_for(varName, howManyIterations) (howManyIterations) |= [&](int (varName), std::mutex &__p_for_mutex)
+
+#define p_for_criticalSectionBegin { std::unique_lock<std::mutex> __p_for_ul(__p_for_mutex);
+
+#define p_for_criticalSectionEnd }
 
 /**
  * Operator overloading exploited to implement the "parallel for" construct. See the comment before #define p_for(...)
  */
-void operator|=(int numberOfIterations, const std::function<void(int)> &lambda){
+void operator|=(int numberOfIterations, const std::function<void(int, std::mutex &)> &lambda) {
+    std::mutex mut;
     cv::parallel_for_(cv::Range(0, numberOfIterations), [&](const cv::Range &range) {
         for (int x = range.start; x < range.end; x++) {
-            lambda(x);
+            lambda(x, mut);
         }
     });
 }
@@ -51,12 +61,23 @@ auto min(int a, int b) -> int {
 }
 
 
-
-
 cv::Mat *castToMatPtr(jlong addr) {
     return (cv::Mat *) addr;
 }
 
+void randomUniqueIndices(
+        int originalSize,
+        int subsetSize,
+        std::vector<int> &out
+){
+    out = std::vector<int>();
+    for (int i = 0; i < originalSize; i++) {
+        out.push_back(i);
+    }
+    while (out.size() > subsetSize) {
+        out.erase(out.begin() + rand() % out.size());
+    }
+}
 
 template<typename T>
 void randomSubset(

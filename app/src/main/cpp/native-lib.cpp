@@ -21,38 +21,26 @@
 #include <memory>
 
 
-
 extern "C"
 JNIEXPORT jint JNICALL
-Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
+Java_parsleyj_arucoslam_NativeMethods_detectMarkers(
         JNIEnv *env,
         jclass,
-        jlong cameraMatrixAddr,
-        jlong distCoeffsAddr,
-        jlong input_mat_addr,
-        jlong result_mat_addr,
-        jintArray acceptedMarkerIDs,
-        jdoubleArray markersSizes,
-        jint maxMarkers,
-        jintArray detectedIDsVect,
-        jdoubleArray outrvecs,
-        jdoubleArray outtvecs
+        jlong cameraMatrixAddr, // in
+        jlong distCoeffsAddr, // in
+        jlong inputMatAddr, // in
+        jlong resultMatAddr, // in
+        jdouble markerLength, // in
+        jint maxMarkers, // in
+        jintArray detectedIDsVect, // out
+        jdoubleArray outrvecs, // out
+        jdoubleArray outtvecs // out
 ) {
     auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
-    cv::Mat inputMat = *castToMatPtr(input_mat_addr);
-    cv::Mat resultMat = *castToMatPtr(result_mat_addr);
+    cv::Mat inputMat = *castToMatPtr(inputMatAddr);
+    cv::Mat resultMat = *castToMatPtr(resultMatAddr);
     cv::Mat cameraMatrix = *castToMatPtr(cameraMatrixAddr);
     cv::Mat distCoeffs = *castToMatPtr(distCoeffsAddr);
-
-    std::unordered_map<int, double> markerSizesMap;
-    populateMapFromJavaArrays<jintArray, jdoubleArray, int, double>(
-            env,
-            acceptedMarkerIDs,
-            markersSizes,
-            &JNIEnv::GetIntArrayElements,
-            &JNIEnv::GetDoubleArrayElements,
-            markerSizesMap
-    );
 
 
     logCameraParameters("native-lib:processCameraFrame", cameraMatrix, distCoeffs);
@@ -71,32 +59,18 @@ Java_parsleyj_arucoslam_NativeMethods_processCameraFrame(
     cv::Mat tmpMat;
     cv::cvtColor(resultMat, tmpMat, CV_RGBA2RGB);
 
+    cv::aruco::drawDetectedMarkers(tmpMat, corners, ids);
 
-    std::vector<int> acceptedMarkers;
-    std::vector<std::vector<cv::Point2f>> acceptedCorners;
-    std::vector<double> acceptedMarkerLengths;
-    for (int i = 0; i < ids.size(); i++) {
-        if (markerSizesMap.find(ids[i]) != markerSizesMap.end()) {
-            acceptedMarkers.push_back(ids[i]);
-            acceptedCorners.push_back(corners[i]);
-            acceptedMarkerLengths.push_back(markerSizesMap[ids[i]]);
-        }
-    }
-
-
-    if (!acceptedMarkers.empty()) {
-        cv::aruco::drawDetectedMarkers(tmpMat, acceptedCorners, acceptedMarkers);
-    }
 
     std::vector<cv::Vec3d> rvecs, tvecs;
-    estimatePoseSingleMarkers(
-            acceptedCorners, acceptedMarkerLengths,
+    cv::aruco::estimatePoseSingleMarkers(
+            corners, markerLength,
             cameraMatrix, distCoeffs,
-            rvecs, tvecs);
+            rvecs, tvecs
+    );
 
 
     for (int i = 0; i < min(int(rvecs.size()), maxMarkers); i++) {
-//    p_for(i, min(int(rvecs.size()), maxMarkers)) {
         auto rvec = rvecs[i];
         auto tvec = tvecs[i];
 
@@ -126,14 +100,14 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
         jintArray fixed_markers,
         jdoubleArray fixed_rvects,
         jdoubleArray fixed_tvects,
-        jdoubleArray fixed_lengths,
+        jdoubleArray fixedMarkerConfidences,
+        jdouble fixedLenght,
         jint foundPosesCount,
         jintArray inMarkers,
         jdoubleArray in_rvects,
         jdoubleArray in_tvects,
-        jdoubleArray previous2d_positions,
-        jdoubleArray previous2d_orientations,
-        jdoubleArray new_position
+        jdoubleArray outRvec,
+        jdoubleArray outTvec
 ) {
     cv::Mat inputMat = *castToMatPtr(inputMatAddr);
     cv::Mat cameraMatrix = *castToMatPtr(cameraMatrixAddr);
@@ -154,14 +128,14 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     pushjDoubleArrayToVectorOfVec3ds(env, fixed_tvects, fixedMarkersTvecs);
     pushjDoubleArrayToVectorOfVec3ds(env, fixed_rvects, fixedMarkersRvecs);
 
-    std::unordered_map<int, double> markerSizesMap;
+    std::unordered_map<int, double> markerConfidenceMap;
     populateMapFromJavaArrays<jintArray, jdoubleArray, int, double>(
             env,
             fixed_markers,
-            fixed_lengths,
+            fixedMarkerConfidences,
             &JNIEnv::GetIntArrayElements,
             &JNIEnv::GetDoubleArrayElements,
-            markerSizesMap
+            markerConfidenceMap
     );
 
     std::vector<int> foundMarkersIDs;
@@ -181,12 +155,13 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
 
     std::vector<cv::Vec3d> positionRvecs;
     std::vector<cv::Vec3d> positionTvecs;
+    std::vector<double> positionConfidences;
     cv::Mat tmpMat;
     cv::cvtColor(inputMat, tmpMat, CV_RGBA2RGB);
 
     draw2DBoxFrame(tmpMat);
 
-    std::mutex mut;
+
 //    for (int i = 0; i < foundMarkersIDs.size(); i++) {
     p_for(i, foundMarkersIDs.size()) {
         int foundMarkerID = foundMarkersIDs[i];
@@ -209,20 +184,21 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
                     recomputedRvec, recomputedTvec
             );
 
-            double markerLength = 0.05;
-            if (markerSizesMap.find(fixedMarkersIDs[fixedMarkerIndex]) != markerSizesMap.end()) {
-                markerLength = markerSizesMap[fixedMarkersIDs[fixedMarkerIndex]];
+            double markerConfidence = 0.0;
+            if (markerConfidenceMap.find(fixedMarkersIDs[fixedMarkerIndex]) != markerConfidenceMap.end()) {
+                markerConfidence = markerConfidenceMap[fixedMarkersIDs[fixedMarkerIndex]];
             }
 
             cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs,
-                                recomputedRvec, recomputedTvec, (float)markerLength);
+                                recomputedRvec, recomputedTvec, (float) fixedLenght);
 
-            {
-                std::unique_lock<std::mutex> ul(mut);
+            p_for_criticalSectionBegin
 
                 positionTvecs.push_back(recomputedTvec);
                 positionRvecs.push_back(recomputedRvec);
-            }
+                positionConfidences.push_back(markerConfidence);
+
+            p_for_criticalSectionEnd
 
 
             fromRTvectsTo2Dpose(recomputedRvec, recomputedTvec, x, y, theta);
@@ -246,8 +222,12 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     int inliersCount;
     cv::Vec3d modelRvec, modelTvec;
     inliersCount = fitPositionModel(positionRvecs, positionTvecs,
-                                    modelRvec, modelTvec);
+                                    modelRvec, modelTvec
+                                    , positionConfidences //TODO
+                                    );
 
+    fromVec3dTojDoubleArray(env, modelRvec, outRvec);
+    fromVec3dTojDoubleArray(env, modelTvec, outTvec);
 
     double estimatedX, estimatedY, estimatedTheta;
     fromRTvectsTo2Dpose(modelRvec, modelTvec, estimatedX, estimatedY, estimatedTheta);
@@ -265,331 +245,6 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     drawCameraRoll(inputMat, modelRvec[1], 30);
     return inliersCount;
 }
-
-
-extern "C"
-JNIEXPORT int JNICALL
-Java_parsleyj_arucoslam_NativeMethods_detectCalibrationCorners(
-        JNIEnv *env,
-        jclass clazz,
-        jlong input_mat_addr,
-        jobjectArray cornersPoints,
-        jintArray idsVect,
-        jintArray size,
-        jint maxMarkers
-) {
-
-    auto image = *castToMatPtr(input_mat_addr);
-    auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
-
-
-    std::vector<int> ids;
-    std::vector<std::vector<cv::Point2f>> corners;
-
-    cv::aruco::detectMarkers(image, dictionary, corners, ids);
-
-
-    if (ids.empty()) {
-        __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp:detectCalibrationCorners",
-                            "Empty ids!");
-        return 0;
-    }
-
-
-    __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp:detectCalibrationCorners",
-                        "ids.size == %d", (uint)ids.size());
-
-    for (int csi = 0; csi < fmin(corners.size(), maxMarkers); csi++) {
-        std::vector<cv::Point2f> &cornerSet = corners[csi];
-        auto fourCorners = env->NewFloatArray(8);
-
-        for (int i = 0; i < 8; i += 2) {
-            cv::Point2f &point = cornerSet[i];
-            env->SetFloatArrayRegion(fourCorners, i, 1, &point.x);
-            env->SetFloatArrayRegion(fourCorners, i + 1, 1, &point.y);
-        }
-
-        env->SetObjectArrayElement(cornersPoints, csi, fourCorners);
-    }
-
-    for (int i = 0; i < fmin(ids.size(), maxMarkers); i++) {
-        env->SetIntArrayRegion(idsVect, i, 1, &ids[i]);
-    }
-
-
-    env->SetIntArrayRegion(size, 0, 1, &image.rows);
-    env->SetIntArrayRegion(size, 1, 1, &image.cols);
-
-    return ids.size();
-}
-
-
-
-extern "C"
-JNIEXPORT jdouble JNICALL
-Java_parsleyj_arucoslam_NativeMethods_calibrate(
-        JNIEnv *env,
-        jclass clazz,
-        jobjectArray collected_corners,
-        jobjectArray collectedIDs,
-        jint size_rows,
-        jint size_cols,
-        jlong camMatrixAddr,
-        jlong distCoeffsAddr
-) {
-
-    auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
-    cv::Ptr<cv::aruco::GridBoard> gridboard = cv::aruco::GridBoard::create(
-            8, 5, 500, 100,
-            dictionary
-    );
-    auto board = gridboard.staticCast<cv::aruco::Board>();
-
-    std::vector<std::vector<std::vector<cv::Point2f>>> allCorners;
-    std::vector<std::vector<int>> allIds;
-
-    jboolean isNotCopy = false;
-    for (int ci = 0; ci < env->GetArrayLength(collected_corners); ci++) {
-        auto frameCorners = jobjectArray(env->GetObjectArrayElement(
-                collected_corners, ci));
-        std::vector<std::vector<cv::Point2f>> frameCornersExtracted;
-        for (int ci2 = 0; ci2 < env->GetArrayLength(frameCorners); ci2++) {
-
-            float *markerCorners = env->GetFloatArrayElements(
-                    jfloatArray(env->GetObjectArrayElement(
-                            frameCorners, ci2
-                    )),
-                    &isNotCopy);
-            std::vector<cv::Point2f> markerCornersExtracted;
-            for (int ci3 = 0; ci3 < 8; ci3 += 2) {
-                markerCornersExtracted.emplace_back(markerCorners[ci3], markerCorners[ci3 + 1]);
-            }
-            frameCornersExtracted.push_back(markerCornersExtracted);
-        }
-
-        allCorners.push_back(frameCornersExtracted);
-    }
-
-    for (int i = 0; i < env->GetArrayLength(collectedIDs); i++) {
-        auto intArray = jintArray(env->GetObjectArrayElement(
-                collectedIDs, i
-        ));
-        int *frameIDs = env->GetIntArrayElements(
-                intArray,
-                &isNotCopy);
-        jsize length = env->GetArrayLength(intArray);
-        std::vector<int> frameIDsExtracted(length);
-        for (int i2 = 0; i2 < length; i2++) {
-            frameIDsExtracted.push_back(frameIDs[i2]);
-        }
-        allIds.push_back(frameIDsExtracted);
-    }
-
-    cv::Size imgSize(size_cols, size_rows);
-    if (allIds.empty()) {
-        __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp:calibrate",
-                            "Not enough captures for calibration");
-        return 0.0;
-    }
-    std::vector<cv::Mat> rvecs, tvecs;
-    double repError;
-    // prepare data for calibration
-    std::vector<std::vector<cv::Point2f>> allCornersConcatenated;
-    std::vector<int> allIdsConcatenated;
-    std::vector<int> markerCounterPerFrame;
-    markerCounterPerFrame.reserve(allCorners.size());
-    for (unsigned int i = 0; i < allCorners.size(); i++) {
-        markerCounterPerFrame.push_back((int) allCorners[i].size());
-        for (unsigned int j = 0; j < allCorners[i].size(); j++) {
-            allCornersConcatenated.push_back(allCorners[i][j]);
-            allIdsConcatenated.push_back(allIds[i][j]);
-        }
-    }
-
-    cv::Mat cameraMatrix = *castToMatPtr(camMatrixAddr);
-    cv::Mat distCoeffs = *castToMatPtr(distCoeffsAddr);
-    // calibrate camera
-    repError = cv::aruco::calibrateCameraAruco(
-            allCornersConcatenated,
-            allIdsConcatenated,
-            markerCounterPerFrame,
-            board,
-            imgSize,
-            cameraMatrix,
-            distCoeffs,
-            rvecs,
-            tvecs,
-            0);
-
-
-    return repError;
-
-}
-
-extern "C"
-JNIEXPORT jdouble JNICALL
-Java_parsleyj_arucoslam_NativeMethods_calibrateChArUco(
-        JNIEnv *env,
-        jclass clazz,
-        jobjectArray collected_corners,
-        jobjectArray collectedIDs,
-        jlongArray collectedFramesAddresses,
-        jint size_rows,
-        jint size_cols,
-        jlong camMatrixAddr,
-        jlong distCoeffsAddr
-) {
-    auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
-
-
-    cv::Ptr<cv::aruco::CharucoBoard> charucoboard =
-            cv::aruco::CharucoBoard::create(
-                    8,
-                    5,
-                    300,
-                    200,
-                    dictionary);
-    cv::Ptr<cv::aruco::Board> board = charucoboard.staticCast<cv::aruco::Board>();
-
-    std::vector<std::vector<std::vector<cv::Point2f>>> allCorners;
-    std::vector<std::vector<int>> allIds;
-    std::vector<cv::Mat> allFrames;
-
-    jboolean isNotCopy = false;
-    for (int ci = 0; ci < env->GetArrayLength(collected_corners); ci++) {
-        auto frameCorners = jobjectArray(env->GetObjectArrayElement(
-                collected_corners, ci));
-        std::vector<std::vector<cv::Point2f>> frameCornersExtracted;
-        for (int ci2 = 0; ci2 < env->GetArrayLength(frameCorners); ci2++) {
-
-            float *markerCorners = env->GetFloatArrayElements(
-                    jfloatArray(env->GetObjectArrayElement(
-                            frameCorners, ci2
-                    )),
-                    &isNotCopy);
-            std::vector<cv::Point2f> markerCornersExtracted;
-            for (int ci3 = 0; ci3 < 8; ci3 += 2) {
-                markerCornersExtracted.emplace_back(markerCorners[ci3], markerCorners[ci3 + 1]);
-            }
-            frameCornersExtracted.push_back(markerCornersExtracted);
-        }
-
-        allCorners.push_back(frameCornersExtracted);
-    }
-
-    for (int i = 0; i < env->GetArrayLength(collectedIDs); i++) {
-        auto intArray = jintArray(env->GetObjectArrayElement(
-                collectedIDs, i
-        ));
-        int *frameIDs = env->GetIntArrayElements(
-                intArray,
-                &isNotCopy);
-        jsize length = env->GetArrayLength(intArray);
-        std::vector<int> frameIDsExtracted(length);
-        for (int i2 = 0; i2 < length; i2++) {
-            frameIDsExtracted.push_back(frameIDs[i2]);
-        }
-        allIds.push_back(frameIDsExtracted);
-    }
-
-
-    jsize nFrames = env->GetArrayLength(collectedFramesAddresses);
-    jlong *framesAddresses = env->GetLongArrayElements(
-            collectedFramesAddresses,
-            &isNotCopy
-    );
-    allFrames.reserve(nFrames);
-    for (int i = 0; i < nFrames; i++) {
-        allFrames.push_back(*castToMatPtr(framesAddresses[i]));
-    }
-
-    cv::Size imgSize(size_cols, size_rows);
-    if (allIds.empty()) {
-        __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp:calibrateChArUco",
-                            "Not enough captures for calibration");
-        return 0.0;
-    }
-
-
-    std::vector<cv::Mat> allCharucoCorners;
-    std::vector<cv::Mat> allCharucoIds;
-    std::vector<cv::Mat> filteredImages;
-    allCharucoCorners.reserve(nFrames);
-    allCharucoIds.reserve(nFrames);
-
-    cv::Mat cameraMatrix = *castToMatPtr(camMatrixAddr);
-    cv::Mat distCoeffs = *castToMatPtr(distCoeffsAddr);
-
-
-
-    // prepare data for aruco calibration
-    std::vector<std::vector<cv::Point2f>> allCornersConcatenated;
-    std::vector<int> allIdsConcatenated;
-    std::vector<int> markerCounterPerFrame;
-    markerCounterPerFrame.reserve(allCorners.size());
-    for (unsigned int i = 0; i < allCorners.size(); i++) {
-        markerCounterPerFrame.push_back((int) allCorners[i].size());
-        for (unsigned int j = 0; j < allCorners[i].size(); j++) {
-            allCornersConcatenated.push_back(allCorners[i][j]);
-            allIdsConcatenated.push_back(allIds[i][j]);
-        }
-    }
-
-    double arucoRepError;
-    // calibrate camera
-    arucoRepError = cv::aruco::calibrateCameraAruco(
-            allCornersConcatenated,
-            allIdsConcatenated,
-            markerCounterPerFrame,
-            board,
-            imgSize,
-            cameraMatrix,
-            distCoeffs,
-            cv::noArray(),
-            cv::noArray(),
-            0);
-
-    __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp:calibrateChArUco",
-                        "aruco rep error = %f", arucoRepError);
-
-    for (int i = 0; i < nFrames; i++) {
-        // interpolate using camera parameters
-        cv::Mat currentCharucoCorners, currentCharucoIds;
-        cv::aruco::interpolateCornersCharuco(allCorners[i], allIds[i], allFrames[i], charucoboard,
-                                             currentCharucoCorners, currentCharucoIds, cameraMatrix,
-                                             distCoeffs);
-
-        allCharucoCorners.push_back(currentCharucoCorners);
-        allCharucoIds.push_back(currentCharucoIds);
-        filteredImages.push_back(allFrames[i]);
-    }
-
-    if (allCharucoCorners.size() < 4) {
-        __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp:calibrateChArUco",
-                            "Not enough corners for calibration");
-        return 0;
-    }
-
-    double repError;
-    std::vector<cv::Mat> rvecs, tvecs;
-    // calibrate camera using charuco
-    repError = cv::aruco::calibrateCameraCharuco(
-            allCharucoCorners,
-            allCharucoIds,
-            charucoboard,
-            imgSize,
-            cameraMatrix,
-            distCoeffs,
-            rvecs,
-            tvecs,
-            0);
-
-    __android_log_print(ANDROID_LOG_ERROR, "native-lib.cpp:calibrateChArUco",
-                        "rep error = %f", repError);
-
-    return repError;
-}
-
 
 
 extern "C"
