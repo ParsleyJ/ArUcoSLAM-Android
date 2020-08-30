@@ -96,7 +96,7 @@ fun FloatBuffer.copyToNewByteBuffer(): ByteBuffer {
     return localByteBuffer
 }
 
-fun DoubleArray.asDoubleBuffer() = DoubleBuffer.wrap(this)
+fun DoubleArray.asDoubleBuffer(): DoubleBuffer = DoubleBuffer.wrap(this)
 
 fun FloatArray.asFloatBuffer() = FloatBuffer.wrap(this)
 

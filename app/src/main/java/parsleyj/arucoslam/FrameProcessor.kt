@@ -4,11 +4,12 @@ import kotlinx.coroutines.Job
 import org.opencv.core.Mat
 import org.opencv.core.Size
 
-class FrameProcessor(
+class FrameProcessor<OtherData>(
     frameSize: Size,
     frameType: Int,
-    val block: suspend (Mat, Mat, IntArray, DoubleArray, DoubleArray) -> Unit,
-    val onDone: FrameProcessor.() -> Unit
+    val recycledData: OtherData,
+    val block: suspend (Mat, Mat, OtherData) -> Unit,
+    val onDone: FrameProcessor<OtherData>.() -> Unit
 ) {
     private val resultMat: Mat =
         Mat.zeros(frameSize, frameType)
@@ -16,9 +17,7 @@ class FrameProcessor(
     var orderToken = -1L
     private var currentJob: Job? = null
 
-    private var idsVec = IntArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT) { -1 }
-    private var rvecs = DoubleArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT * 3) { 0.0 }
-    private var tvecs = DoubleArray(MainActivity.DETECTED_MARKERS_MAX_OUTPUT * 3) { 0.0 }
+
 
 
     fun assignFrame(inputMat: Mat?, token: Long) {
@@ -39,7 +38,7 @@ class FrameProcessor(
                 done()
             } else {
                 try {
-                    block(inMat, resultMat, idsVec, rvecs, tvecs)
+                    block(inMat, resultMat, recycledData)
                 } catch (e: Throwable) {
                     e.printStackTrace()
                 }

@@ -4,15 +4,17 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.support.v4.app.ActivityCompat
-import android.support.v4.content.ContextCompat
-import android.support.v7.app.AppCompatActivity
+//import android.support.v4.app.ActivityCompat
+//import android.support.v4.content.ContextCompat
+//import android.support.v7.app.AppCompatActivity
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import android.view.SurfaceView
 import android.view.WindowManager
-import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import kotlinx.android.synthetic.main.activity_main.*
 import org.opencv.android.FixedCameraBridgeViewBase
 import org.opencv.android.OpenCVLoader
@@ -32,74 +34,36 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         CalibData.xiaomiMiA1RearCamera
     }
 
-    //    private val markerSpace = MarkerTaggedSpace.arucoBoard(
-//        dictionary = ArucoDictionary.DICT_6X6_250,
-//        markersX = 8,
-//        markersY = 5,
-//        markerLength = 0.0295,
-//        markerSeparation = 0.006
-//    )
-    private val markerSpace by lazy {
-        MarkerTaggedSpace.threeStackedMarkers(
-            dictionary = ArucoDictionary.DICT_6X6_250,
-            id1 = 4,
-            id2 = 5,
-            id3 = 6,
-            markerLength = 0.079,
-            markerSeparation = 0.0055
-        ) + MarkerTaggedSpace.singleMarker(
-            dictionary = ArucoDictionary.DICT_6X6_250,
-            id = 0,
-            markerLength = 0.083
-        ).movedTo(
-            Vec3d(+0.38, -0.079, -0.03)
-        ) + MarkerTaggedSpace.singleMarker(
-            dictionary = ArucoDictionary.DICT_6X6_250,
-            id = 3,
-            markerLength = 0.079
-        ).movedTo(
-//            Pose3d(Vec3d(0.0, Math.PI/2.0, 0.0), Vec3d(-0.63/4.0,-0.084/2.0,+0.18/2.0))
-            Pose3d(Vec3d(0.0, Math.PI/2.0, 0.0), Vec3d(-0.18,-0.084,+0.63))
-        ) + (MarkerTaggedSpace.arucoBoard(
-            dictionary = ArucoDictionary.DICT_6X6_250,
-            markersX = 8,
-            markersY = 5,
-            markerLength = 0.0295,
-            markerSeparation = 0.006
-        ).movedTo(
-            Vec3d(+0.166, -0.31, 0.0)
-        ) - list[0, 3, 4, 5, 6])
-    }
+    private lateinit var frameStreamProcessor: FrameStreamProcessor<FrameRecyclableData>
 
-//    private val markerSpace by lazy {
-//        MarkerTaggedSpace.singleMarker(
-//            dictionary = ArucoDictionary.DICT_6X6_250,
-//            id = 3,
-//            markerLength = 0.079
-//        )+ MarkerTaggedSpace.singleMarker(
-//            dictionary = ArucoDictionary.DICT_6X6_250,
-//            id = 2,
-//            markerLength = 0.079
-//        ).movedTo(Vec3d(0.0, -0.168, 0.0))
-//    }
 
-    private val fixedMarkerIds by lazy {
-        markerSpace.markers
+    private var markerSpace = MarkerTaggedSpace.singleMarker(
+        dictionary = ArucoDictionary.DICT_6X6_250,
+        id = 3,
+        markerLength = 0.079
+    )
+
+
+    private val fixedMarkerIds: IntArray
+        get() = markerSpace.markers
             .map { it.markerId }
             .toIntArray()
-    }
-    private val fixedMarkerRvects by lazy {
-        markerSpace.markers
+
+
+    private val fixedMarkerRvects: DoubleArray
+        get() = markerSpace.markers
             .map { it.pose3d.rotationVector }
             .flattenVecs()
             .toDoubleArray()
-    }
-    private val fixedMarkerTvects by lazy {
-        markerSpace.markers
+
+
+    private val fixedMarkerTvects: DoubleArray
+        get() = markerSpace.markers
             .map { it.pose3d.translationVector }
             .flattenVecs()
             .toDoubleArray()
-    }
+
+
     private val fixedMarkerLengths by lazy {
         markerSpace.markers
             .map { it.markerSideLength }
@@ -150,7 +114,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         Log.i(TAG, "Returned from calibration. distCoeffs   = $dcs")
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) =
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         when (requestCode) {
             CALIBRATION_REQUEST -> {
                 setCameraParameters(
@@ -160,8 +124,11 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                 )
             }
             else -> {
+
             }
         }
+        super.onActivityResult(requestCode, resultCode, data)
+    }
 
     override fun onCameraViewStarted(width: Int, height: Int) {
 //        if (cameraParameters==null) {
@@ -180,8 +147,33 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         return frameCounter++
     }
 
+    data class FrameRecyclableData(
+        val foundIDs: IntArray,
+        val foundRVecs: DoubleArray,
+        val foundTVecs: DoubleArray
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
 
-    var frameStreamProcessor: FrameStreamProcessor? = null
+            other as FrameRecyclableData
+
+            if (!foundIDs.contentEquals(other.foundIDs)) return false
+            if (!foundRVecs.contentEquals(other.foundRVecs)) return false
+            if (!foundTVecs.contentEquals(other.foundTVecs)) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = foundIDs.contentHashCode()
+            result = 31 * result + foundRVecs.contentHashCode()
+            result = 31 * result + foundTVecs.contentHashCode()
+            return result
+        }
+    }
+
+
 
 
     override fun onCameraFrame(inputFrame: FixedCameraBridgeViewBase.CvCameraViewFrame?): Mat? {
@@ -189,12 +181,20 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
             Log.v(TAG, "inputFrame != null")
             val inputMat = inputFrame.rgba()
 
-            if (frameStreamProcessor == null) {
+            if (!this::frameStreamProcessor.isInitialized) {
                 frameStreamProcessor = FrameStreamProcessor(
                     inputMat.size(),
                     inputMat.type(),
-                    2 // number of parallel processors on frames
-                ) { inMat, outMat, foundIDs, foundRvecs, foundTvecs ->
+                    3, // number of parallel processors on frames
+                    instantiateOtherData = { // lambda that tells the FrameStreamProcessor how
+                                             //  to create a recyclable support data structure
+                        FrameRecyclableData(
+                            foundIDs = IntArray(DETECTED_MARKERS_MAX_OUTPUT) { 0 },
+                            foundRVecs = DoubleArray(DETECTED_MARKERS_MAX_OUTPUT * 3) { 0.0 },
+                            foundTVecs = DoubleArray(DETECTED_MARKERS_MAX_OUTPUT * 3) { 0.0 }
+                        )
+                    }
+                ) { inMat, outMat, (foundIDs, foundRvecs, foundTvecs) ->
 
                     val foundPoses = NativeMethods.processCameraFrame(
                         cameraParameters.cameraMatrix.nativeObjAddr,
@@ -212,7 +212,6 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
 
                     if (foundPoses > 0) {
                         val estimatedPosition = DoubleArray(3) { 0.0 }
-
 
                         val inliersCount = NativeMethods.estimateCameraPosition(
                             cameraParameters.cameraMatrix.nativeObjAddr,
@@ -235,9 +234,9 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
             }
 
 
-            frameStreamProcessor!!.supply(inputMat, countFrame())
-            Log.d(TAG, "FrameStream usage = ${frameStreamProcessor!!.usage()}")
-            return frameStreamProcessor!!.retrieve()
+            frameStreamProcessor.supply(inputMat, countFrame())
+            Log.d(TAG, "FrameStream usage = ${frameStreamProcessor.usage()}")
+            return frameStreamProcessor.retrieve()
         } else {
 //            Log.v(TAG, "inputFrame is null, returning null to view")
             return null

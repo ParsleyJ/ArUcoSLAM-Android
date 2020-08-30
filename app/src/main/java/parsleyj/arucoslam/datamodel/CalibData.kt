@@ -1,7 +1,6 @@
 package parsleyj.arucoslam.datamodel
 
 import android.content.Context
-import android.preference.PreferenceManager
 import android.util.Log
 import org.opencv.core.CvType
 import org.opencv.core.Mat
@@ -14,8 +13,8 @@ class CalibData(
     val resolutionWidth: Double,
     val resolutionHeight: Double
 ) {
-    val cameraMatrixData = doubleArray[0.0, 0.0, 0.0, 0.0]
-    val distCoeffData: DoubleArray
+    private val cameraMatrixData = doubleArray[0.0, 0.0, 0.0, 0.0]
+    private val distCoeffData: DoubleArray
     val fx: Double
         get() = cameraMatrixData[0]
     val fy: Double
@@ -82,8 +81,10 @@ class CalibData(
         private const val DISTORTION_COEFFICIENTS_ARR_KEY = "DISTORTION_COEFFICIENTS_ARR_KEY"
         private const val TAG = "PersistentCameraParams"
 
-        fun retrieveSavedCameraMatrix(context: Context): Mat? {
-            val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+        private fun retrieveSavedCameraMatrix(context: Context): Mat? {
+            val sharedPreferences = context.getSharedPreferences(
+                "parsleyj.arucoslam.CALIB_DATA", Context.MODE_PRIVATE
+            )
             val fX = sharedPreferences.getFloat(CAMERA_MATRIX_F_X_KEY, 0f).toDouble()
             val fY = sharedPreferences.getFloat(CAMERA_MATRIX_F_Y_KEY, 0f).toDouble()
             val cX = sharedPreferences.getFloat(CAMERA_MATRIX_C_X_KEY, 0f).toDouble()
@@ -104,8 +105,10 @@ class CalibData(
             return Mat(3, 3, CvType.CV_64FC1, cameraMatrixBuffer.copyToNewByteBuffer())
         }
 
-        fun retrieveSavedDistCoefficients(context: Context): Mat? {
-            val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+        private fun retrieveSavedDistCoefficients(context: Context): Mat? {
+            val sharedPreferences = context.getSharedPreferences(
+                "parsleyj.arucoslam.CALIB_DATA", Context.MODE_PRIVATE
+            )
             val size =
                 sharedPreferences.getInt(DISTORTION_COEFFICIENTS_ARR_KEY + "_size", 0)
             if (size <= 0) {
@@ -125,7 +128,9 @@ class CalibData(
         }
 
         fun loadCameraParameters(context: Context): CalibData? {
-            val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+            val sharedPreferences = context.getSharedPreferences(
+                "parsleyj.arucoslam.CALIB_DATA", Context.MODE_PRIVATE
+            )
             val cameraMatrix = retrieveSavedCameraMatrix(context)
             val distCoeffs = retrieveSavedDistCoefficients(context)
 
@@ -144,7 +149,9 @@ class CalibData(
             if (camMat == null || distMat == null) {
                 return@backgroundExec
             }
-            val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+            val sharedPreferences = context.getSharedPreferences(
+                "parsleyj.arucoslam.CALIB_DATA", Context.MODE_PRIVATE
+            )
 
             val editor = sharedPreferences.edit()
             synchronized(this) {

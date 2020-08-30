@@ -1,5 +1,4 @@
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "hicpp-signed-bitwise"
+
 
 #include <jni.h>
 #include <android/log.h>
@@ -20,12 +19,6 @@
 #include <sstream>
 #include <cmath>
 #include <memory>
-
-// X -> blue
-// Y -> green
-// Z -> red
-
-
 
 
 
@@ -222,7 +215,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
             }
 
             cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs,
-                                recomputedRvec, recomputedTvec, markerLength);
+                                recomputedRvec, recomputedTvec, (float)markerLength);
 
             {
                 std::unique_lock<std::mutex> ul(mut);
@@ -240,7 +233,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
             fromRTvectsTo2Dpose(fixedMarkersRvecs[fixedMarkerIndex],
                                 fixedMarkersTvecs[fixedMarkerIndex],
                                 x, y, theta);
-            
+
 
             drawObjectPosition(tmpMat, x, y, theta,
                                cv::Scalar(0, 255, 0), cv::MarkerTypes::MARKER_SQUARE, 5,
@@ -304,7 +297,7 @@ Java_parsleyj_arucoslam_NativeMethods_detectCalibrationCorners(
 
 
     __android_log_print(ANDROID_LOG_VERBOSE, "native-lib.cpp:detectCalibrationCorners",
-                        "ids.size == %d", ids.size());
+                        "ids.size == %d", (uint)ids.size());
 
     for (int csi = 0; csi < fmin(corners.size(), maxMarkers); csi++) {
         std::vector<cv::Point2f> &cornerSet = corners[csi];
@@ -598,7 +591,7 @@ Java_parsleyj_arucoslam_NativeMethods_calibrateChArUco(
 }
 
 
-#pragma clang diagnostic pop
+
 extern "C"
 JNIEXPORT void JNICALL
 Java_parsleyj_arucoslam_NativeMethods_composeRT(
