@@ -1,5 +1,6 @@
 package parsleyj.arucoslam
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import org.opencv.core.Mat
 import org.opencv.core.Size

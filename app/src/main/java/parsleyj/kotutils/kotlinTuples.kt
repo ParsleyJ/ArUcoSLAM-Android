@@ -1,4 +1,4 @@
-package org.parsleyj.kotutils
+package parsleyj.kotutils
 
 data class Tuple1<T1>(
         val _1: T1

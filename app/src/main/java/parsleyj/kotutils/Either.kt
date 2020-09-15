@@ -1,4 +1,4 @@
-package org.parsleyj.kotutils
+package parsleyj.kotutils
 
 import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.contract
@@ -24,17 +24,17 @@ sealed class Either<T1, T2> {
     }
 }
 
-inline fun <T1, T2, R1> Either<T1, T2>.mapLeft(block: (T1) -> R1):Either<R1, T2> = when(this){
+inline fun <T1, T2, R1> Either<T1, T2>.mapLeft(block: (T1) -> R1): Either<R1, T2> = when(this){
     is Either.Left<T1, T2> -> Either.Left(block(this.get))
     is Either.Right<T1, T2> -> Either.Right(this.get)
 }
 
-inline fun <T1, T2, R2> Either<T1, T2>.mapRight(block: (T2) -> R2):Either<T1, R2> = when(this){
+inline fun <T1, T2, R2> Either<T1, T2>.mapRight(block: (T2) -> R2): Either<T1, R2> = when(this){
     is Either.Left<T1, T2> -> Either.Left(this.get)
     is Either.Right<T1, T2> -> Either.Right(block(this.get))
 }
 
-inline fun <T, R> Either<T, T>.mapBoth(block:(T)->R):Either<R, R> = when(this){
+inline fun <T, R> Either<T, T>.mapBoth(block:(T)->R): Either<R, R> = when(this){
     is Either.Left<T, T> -> Either.Left(block(this.get))
     is Either.Right<T, T> -> Either.Right(block(this.get))
 }
@@ -64,6 +64,6 @@ fun <T> Optional<T>.isNothing():Boolean{
 fun <T> nothing() = ONothing<T>(Unit)
 fun <T> some(v:T) = OSome(v)
 
-fun <T,R> Optional<T>.map(block:(T)->R):Optional<R>{
+fun <T,R> Optional<T>.map(block:(T)->R): Optional<R> {
     return this.mapLeft(block)
 }

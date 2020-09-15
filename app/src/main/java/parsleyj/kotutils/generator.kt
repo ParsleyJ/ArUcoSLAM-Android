@@ -1,4 +1,4 @@
-package org.parsleyj.kotutils
+package parsleyj.kotutils
 
 import kotlin.coroutines.*
 import kotlin.coroutines.intrinsics.*

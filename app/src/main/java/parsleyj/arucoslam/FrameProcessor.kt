@@ -4,6 +4,7 @@ import kotlinx.coroutines.Job
 import org.opencv.core.Mat
 import org.opencv.core.Size
 
+
 class FrameProcessor<OtherData>(
     frameSize: Size,
     frameType: Int,
@@ -16,8 +17,6 @@ class FrameProcessor<OtherData>(
     private var inputMat: Mat? = null
     var orderToken = -1L
     private var currentJob: Job? = null
-
-
 
 
     fun assignFrame(inputMat: Mat?, token: Long) {

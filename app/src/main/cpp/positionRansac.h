@@ -10,17 +10,28 @@
 #include "utils.h"
 
 
+double getWeight(int i, const std::vector<double>& weights = std::vector<double>()){
+    if(weights.size() <= i){
+        return 1.0;
+    }else{
+        return weights[i];
+    }
+}
+
 template<typename ITERABLE>
-double meanAngle(const ITERABLE &c) {
+double meanAngle(const ITERABLE &c, const std::vector<double>& weights = std::vector<double>()) {
     auto it = std::begin(c);
     auto end = std::end(c);
 
+
     double x = 0.0;
     double y = 0.0;
+    int i = 0;
     while (it != end) {
-        x += cos(*it);
-        y += sin(*it);
+        x += cos(*it * weights[i]);
+        y += sin(*it * weights[i]);
         it = std::next(it);
+        i++;
     }
 
     return atan2(y, x);
@@ -34,17 +45,13 @@ void computeAngleCentroid(
     std::vector<double> tmp;
     tmp.reserve(rvecs.size());
 
-    std::function<double(int)> getWeight = [&](int i) {
-        if (weights.size() <= i) {
-            return 1.0;
-        } else {
-            return weights[i];
-        }
-    };
 
     for (int j = 0; j < 3; j++) {
+        double weightSum = 0.0;
         for (int i = 0; i < rvecs.size(); i++) {
-            tmp.push_back(rvecs[i][j] * getWeight(i));
+            double weight = getWeight(i);
+            weightSum += weight;
+            tmp.push_back(rvecs[i][j] * weight);
         }
         angleCentroid[j] = meanAngle(tmp);
         tmp.clear();
@@ -57,22 +64,20 @@ void computeCentroid(
         cv::Vec3d &centre,
         const std::vector<double> &weights = std::vector<double>()
 ) {
-    std::function<double(int)> getWeight = [&](int i) {
-        if (weights.size() <= i) {
-            return 1.0;
-        } else {
-            return weights[i];
-        }
-    };
 
+    double weightSum = 0.0;
     centre[0] = 0;
     centre[1] = 0;
     centre[2] = 0;
     for (int i = 0; i < vecs.size(); i++) {
-        centre[0] += vecs[i][0] * getWeight(i) / double(vecs.size());
-        centre[1] += vecs[i][1] * getWeight(i) / double(vecs.size());
-        centre[2] += vecs[i][2] * getWeight(i) / double(vecs.size());
+        weightSum += getWeight(i);
+        centre[0] += vecs[i][0] * getWeight(i);
+        centre[1] += vecs[i][1] * getWeight(i);
+        centre[2] += vecs[i][2] * getWeight(i);
     }
+    centre[0] /= weightSum;
+    centre[1] /= weightSum;
+    centre[2] /= weightSum;
 }
 
 void vectorRansac(
@@ -91,13 +96,6 @@ void vectorRansac(
         = &computeCentroid
 ) {
 
-    std::function<double(int)> getWeight = [&](int i) {
-        if (weights.size() <= i) {
-            return 1.0;
-        } else {
-            return weights[i];
-        }
-    };
 
     if (vecs.empty()) {
         inliers = 0;

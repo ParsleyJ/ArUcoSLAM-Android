@@ -1,4 +1,4 @@
-package org.parsleyj.kotutils
+package parsleyj.kotutils
 
 class IteratorStateException(message: String) : RuntimeException(message)
 
@@ -17,7 +17,7 @@ inline fun <T, R> Iterable<T>.itMap(crossinline block: (T) -> R): Iterable<R> {
 
 
 inline fun <reified T> Iterable<T?>.itExcludeNulls(): Iterable<T> {
-    return this.itFilter { it != null }.map { it as T }
+    return this.itFilter { it != null }.itMap { it as T }
 }
 
 
@@ -26,7 +26,7 @@ inline fun <T> Iterable<T>.itFilter(crossinline block: (T) -> Boolean): Iterable
         override fun iterator(): Iterator<T> {
             val originalIt = this@itFilter.iterator()
             return object : Iterator<T> {
-                private var queue:Optional<T> = nothing()
+                private var queue: Optional<T> = nothing()
 
                 override fun hasNext(): Boolean {
                     if (queue.isNothing()) {
