@@ -95,3 +95,7 @@ fun <T> iterate(g: Generator<T, Unit>) = object : Iterable<T> {
         }
     }
 }
+
+fun <T> generateIt(block: suspend GeneratorBuilder<T, Unit>.(Unit) -> Unit):Iterable<T>{
+    return iterate(generate(block))
+}

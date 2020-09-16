@@ -2,6 +2,60 @@ package parsleyj.kotutils
 
 class IteratorStateException(message: String) : RuntimeException(message)
 
+interface NonEmptyIterable<T> : Iterable<T> {
+    fun itFirst(): T {
+        return iterator().next()
+    }
+}
+
+
+/**
+ * Generates a [NonEmptyIterable] by wrapping this [Iterable]. If an [Iterator] returned by this iterable is empty
+ * (i.e. the first call to [Iterator.hasNext] returns false) the iterable returns a [ItSingleton.ItSingletonIterator]
+ * which provides the default value instead.
+ */
+fun <T : Any> Iterable<T>.asNonEmpty(defaultValue: T): NonEmptyIterable<T> {
+    return object : NonEmptyIterable<T> {
+        override fun iterator(): Iterator<T> {
+            val it = this@asNonEmpty.iterator()
+            return if (it.hasNext()) {
+                it
+            } else {
+                ItSingleton.ItSingletonIterator(defaultValue)
+            }
+        }
+    }
+
+}
+
+
+class ItSingleton<T : Any>(private val t: T) : NonEmptyIterable<T> {
+
+    class ItSingletonIterator<T : Any>(t: T) : Iterator<T> {
+        private var wr: T? = t
+
+        override fun hasNext(): Boolean {
+            return wr != null
+        }
+
+        override fun next(): T {
+            val r = wr
+            if (r != null) {
+                wr = null
+                return r
+            }
+            throw IteratorStateException("Invalid state of iterator (called next() without hasNext()?)")
+        }
+
+
+    }
+
+    override fun iterator(): Iterator<T> {
+        return ItSingletonIterator(t)
+    }
+
+}
+
 inline fun <T, R> Iterable<T>.itMap(crossinline block: (T) -> R): Iterable<R> {
     return object : Iterable<R> {
         override fun iterator(): Iterator<R> {
@@ -17,7 +71,7 @@ inline fun <T, R> Iterable<T>.itMap(crossinline block: (T) -> R): Iterable<R> {
 
 
 inline fun <reified T> Iterable<T?>.itExcludeNulls(): Iterable<T> {
-    return this.itFilter { it != null }.itMap { it as T }
+    return this.itFilter { it != null }.map { it as T }
 }
 
 
@@ -26,14 +80,14 @@ inline fun <T> Iterable<T>.itFilter(crossinline block: (T) -> Boolean): Iterable
         override fun iterator(): Iterator<T> {
             val originalIt = this@itFilter.iterator()
             return object : Iterator<T> {
-                private var queue: Optional<T> = nothing()
+                private var queue: Maybe<T> = nothing()
 
                 override fun hasNext(): Boolean {
                     if (queue.isNothing()) {
                         while (originalIt.hasNext()) {
                             val item = originalIt.next()
                             if (block(item)) {
-                                queue = some(item)
+                                queue = just(item)
                                 return true
                             }
                         }
@@ -45,7 +99,7 @@ inline fun <T> Iterable<T>.itFilter(crossinline block: (T) -> Boolean): Iterable
 
                 override fun next(): T {
                     val q = queue
-                    if (q is OSome<T>) {
+                    if (q is MJust<T>) {
                         val r = q.get
                         queue = nothing()
                         return r
@@ -58,7 +112,47 @@ inline fun <T> Iterable<T>.itFilter(crossinline block: (T) -> Boolean): Iterable
     }
 }
 
-fun Iterable<String>.joinWithSeparator(sep: String):String{
+fun <T> Iterable<T>.itTakeWhile(predicate: (T) -> Boolean): Iterable<T> {
+    return object :Iterable<T>{
+        override fun iterator(): Iterator<T> {
+            val originalIt = this@itTakeWhile.iterator()
+            return object : Iterator<T>{
+                private var queue: Maybe<T> = nothing()
+
+                override fun hasNext(): Boolean {
+                    if(queue.isNothing()){
+                        if(originalIt.hasNext()){
+                            val item = originalIt.next()
+                            if(predicate(item)){
+                                queue = just(item)
+                                return true
+                            }
+                        }
+                        return false
+                    }else{
+                        return true
+                    }
+                }
+
+                override fun next(): T {
+                    val q = queue
+                    if (q is MJust<T>) {
+                        val r = q.get
+                        queue = nothing()
+                        return r
+                    } else {
+                        throw IteratorStateException("Invalid state of iterator (called next() without hasNext()?)")
+                    }
+                }
+
+            }
+        }
+
+    }
+}
+
+
+fun Iterable<String>.joinWithSeparator(sep: String): String {
     val iterator = this.iterator()
     if (!iterator.hasNext()) {
         return ""
@@ -71,6 +165,7 @@ fun Iterable<String>.joinWithSeparator(sep: String):String{
 }
 
 
-fun Iterable<String>.prepend(what:String) = this.itMap { "$what$it" }
+fun Iterable<String>.prepend(what: String) = this.itMap { "$what$it" }
 
 fun <T> Iterable<T>.mapToString() = this.itMap { "$it" }
+

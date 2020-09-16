@@ -7,12 +7,12 @@ import kotlinx.coroutines.async
 import parsleyj.arucoslam.defaultDispatcher
 import parsleyj.kotutils.with
 
-class Processor<MetadataT, InputT, OutputT, SupportDataT>(
-    val metadata: MetadataT,
+open class Processor<ParametersT, InputT, OutputT, SupportDataT>(
+    val metadata: ParametersT,
     val recycledState: SupportDataT,
     emptyOutput: OutputT,
     private val coroutineScope: CoroutineScope = defaultDispatcher,
-    val block: suspend (MetadataT, InputT, OutputT, SupportDataT) -> Unit,
+    val block: suspend (ParametersT, InputT, OutputT, SupportDataT) -> Unit,
 ) {
     private val result = emptyOutput
     private var input: InputT? = null
@@ -48,3 +48,4 @@ class Processor<MetadataT, InputT, OutputT, SupportDataT>(
 
     fun isBusy() = currentJob?.isActive ?: false
 }
+
