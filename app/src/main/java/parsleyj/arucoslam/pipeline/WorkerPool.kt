@@ -9,19 +9,18 @@ import parsleyj.arucoslam.mainDispatcher
 import parsleyj.kotutils.*
 
 
-open class ProcessorPool<ParametersT, InputT, OutputT, SupportDataT>(
-    val metadata: ParametersT,
+open class ProcessorPool<InputT, OutputT, SupportDataT>(
     private val maxProcessors: Int,
     private val supplyEmptyOutput: () -> OutputT,
     private val instantiateSupportData: () -> SupportDataT,
     private val coroutineScope: CoroutineScope = mainDispatcher,
     private val jobTimeout: Long = 1000L,
     private val onCannotProcess: (OutputT, InputT) -> OutputT = { _, _ -> supplyEmptyOutput() },
-    private val block: suspend (ParametersT, InputT, OutputT, SupportDataT) -> Unit,
+    private val block: suspend (InputT, OutputT, SupportDataT) -> Unit,
 ):Pipeline<InputT, OutputT> {
     private var lastResult = supplyEmptyOutput()
     private var lastResultToken = -1L
-    private val processors = mutableListOf<Processor<ParametersT, InputT, OutputT, SupportDataT>>()
+    protected val processors = mutableListOf<Processor<InputT, OutputT, SupportDataT>>()
     private val tokenGenerator = Pipeline.tokenGen().iterator()
 
     private suspend fun <E : Job> Iterable<E>.joinFirst(): E = select {
@@ -102,7 +101,7 @@ open class ProcessorPool<ParametersT, InputT, OutputT, SupportDataT>(
      * It finds a free processor if available. If not, it creates new frame processor.
      * If the creation is not possible, it returns null.
      */
-    private fun getFreeProcessor(): Processor<ParametersT, InputT, OutputT, SupportDataT>? {
+    private fun getFreeProcessor(): Processor<InputT, OutputT, SupportDataT>? {
         if (processors.isEmpty()) {
             val frameProcessor = createProcessor()
             processors.add(frameProcessor)
@@ -131,9 +130,8 @@ open class ProcessorPool<ParametersT, InputT, OutputT, SupportDataT>(
 
     }
 
-    private fun createProcessor(): Processor<ParametersT, InputT, OutputT, SupportDataT> {
+    private fun createProcessor(): Processor<InputT, OutputT, SupportDataT> {
         return Processor(
-            metadata,
             instantiateSupportData(),
             supplyEmptyOutput(),
             coroutineScope,

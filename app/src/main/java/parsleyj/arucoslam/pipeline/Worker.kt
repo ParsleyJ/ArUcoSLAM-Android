@@ -7,12 +7,11 @@ import kotlinx.coroutines.async
 import parsleyj.arucoslam.defaultDispatcher
 import parsleyj.kotutils.with
 
-open class Processor<ParametersT, InputT, OutputT, SupportDataT>(
-    val metadata: ParametersT,
+open class Processor<InputT, OutputT, SupportDataT>(
     val recycledState: SupportDataT,
     emptyOutput: OutputT,
     private val coroutineScope: CoroutineScope = defaultDispatcher,
-    val block: suspend (ParametersT, InputT, OutputT, SupportDataT) -> Unit,
+    val block: suspend (InputT, OutputT, SupportDataT) -> Unit,
 ) {
     private val result = emptyOutput
     private var input: InputT? = null
@@ -35,7 +34,7 @@ open class Processor<ParametersT, InputT, OutputT, SupportDataT>(
                 return@async result with requestToken
             } else {
                 try {
-                    block(metadata, inp, result, recycledState)
+                    block(inp, result, recycledState)
                 } catch (e: Throwable) {
                     e.printStackTrace()
                 }
