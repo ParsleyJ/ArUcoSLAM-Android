@@ -19,6 +19,8 @@ public class NativeMethods {
             long cameraMatrixAddr,
             long distCoeffsAddr,
             long inputMatAddr,
+
+            int fixedMarkerCount,
             int[] fixedMarkers,
             double[] fixedRVects,
             double[] fixedTVects,
@@ -40,6 +42,25 @@ public class NativeMethods {
             double[] inTvec2,
             double[] outRvec,
             double[] outTvec
+    );
+
+    public static native void renderMap(
+            double[] fixedRVects,
+            double[] fixedTVects,
+            double[] mapCameraPoseRotation,
+            double[] mapCameraPoseTranslation,
+            double[] phonePositionRvect,
+            double[] phonePositionTvect,
+            double mapCameraFovX,
+            double mapCameraFovY,
+            double mapCameraApertureX,
+            double mapCameraApertureY,
+            int mapCameraPixelsX,
+            int mapCameraPixelsY,
+            int mapTopLeftCornerX,
+            int mapTopLeftCornerY,
+            //TODO track
+            long resultMatAddr
     );
 
 }

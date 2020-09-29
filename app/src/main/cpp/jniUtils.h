@@ -60,16 +60,23 @@ void populateMapFromJavaArrays(
         inputArrayT2 inValues,
         const std::function<outputMapKeyT *(JNIEnv *, inputArrayT1, jboolean *)> &keyBufferResolver,
         const std::function<outputMapValueT *(JNIEnv *, inputArrayT2, jboolean *)> &valueBufferResolver,
-        std::unordered_map<outputMapKeyT, outputMapValueT> &outMap
+        std::unordered_map<outputMapKeyT, outputMapValueT> &outMap,
+        int inputOffset = 0,
+        int inputCount = -1
 ) {
     int size = min(env->GetArrayLength(inKeys), env->GetArrayLength(inValues));
+
+    if(inputCount>=0){
+        size = min(size, inputCount);
+    }
 
     outMap.reserve(size);
     jboolean isCopy = false;
     outputMapKeyT *keyBuffer = keyBufferResolver(env, inKeys, &isCopy);
     outputMapValueT *valueBuffer = valueBufferResolver(env, inValues, &isCopy);
 
-    for (int i = 0; i < size; i++) {
+
+    for (int i = inputOffset; i < size; i++) {
         outMap[keyBuffer[i]] = valueBuffer[i];
     }
 }

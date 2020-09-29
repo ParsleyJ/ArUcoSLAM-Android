@@ -1,20 +1,21 @@
 package parsleyj.arucoslam.pipeline
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
+import kotlinx.coroutines.*
+import parsleyj.arucoslam.FrameProcessor
+import parsleyj.arucoslam.backgroundExec
 import parsleyj.arucoslam.defaultDispatcher
 import parsleyj.kotutils.with
 
-open class Processor<InputT, OutputT, SupportDataT>(
+open class Worker<InputT, OutputT, SupportDataT>(
     val recycledState: SupportDataT,
     emptyOutput: OutputT,
     private val coroutineScope: CoroutineScope = defaultDispatcher,
     val block: suspend (InputT, OutputT, SupportDataT) -> Unit,
+    val onDone: Worker<InputT, OutputT, SupportDataT>.() -> Unit
 ) {
     private val result = emptyOutput
     private var input: InputT? = null
+    var isActive = false
     var requestToken = -1L
     private set
     private var currentJob: Job? = null
@@ -27,24 +28,31 @@ open class Processor<InputT, OutputT, SupportDataT>(
     }
 
 
-    suspend fun computeAsync(): Deferred<Pair<OutputT, Long>> {
-        val deferred = coroutineScope.async {
+    suspend fun compute() :Job? {
+        isActive = true
+        currentJob = coroutineScope.launch {
             val inp = input
             if (inp == null) {
-                return@async result with requestToken
+                done()
             } else {
                 try {
                     block(inp, result, recycledState)
                 } catch (e: Throwable) {
                     e.printStackTrace()
                 }
-                return@async result with requestToken
+                done()
             }
         }
-        currentJob = deferred
-        return deferred
+        return currentJob
     }
 
-    fun isBusy() = currentJob?.isActive ?: false
+    private fun done() {
+        isActive = false
+        this.onDone()
+    }
+
+    fun isBusy() = isActive
+
+    fun retrieveResult() = result
 }
 

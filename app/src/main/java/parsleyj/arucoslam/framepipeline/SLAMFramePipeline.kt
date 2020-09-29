@@ -1,15 +1,18 @@
-package parsleyj.arucoslam.pipeline
+package parsleyj.arucoslam.framepipeline
 
-import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import org.opencv.core.Mat
 import org.opencv.core.Size
 import parsleyj.arucoslam.*
 import parsleyj.arucoslam.datamodel.CalibData
+import parsleyj.arucoslam.datamodel.Vec3d
 import parsleyj.arucoslam.datamodel.slamspace.SLAMSpace
-import parsleyj.kotutils.generateIt
+import parsleyj.arucoslam.pipeline.WorkerPool
+import kotlin.math.PI
 
 
+val mapCameraRotation = Vec3d(-PI / 2.0, 0.0, 0.0).asDoubleArray()
+val mapCameraTranslation = Vec3d(0.0, -1.0, 10.0).asDoubleArray()
 
 class SLAMFramePipeline(
     private val maxMarkersPerFrame: Int, // how many markers are considered by the detector at each frame
@@ -35,7 +38,8 @@ class SLAMFramePipeline(
     jobTimeout,
     block = { inMat, outMat, (foundIDs, foundRvecs, foundTvecs) ->
 
-        val foundPosesCount = NativeMethods.detectMarkers(
+        // find all the markers in the image and estimate their poses w.r.t. camera
+        val foundMarkersCount = NativeMethods.detectMarkers(
             calibDataSupplier().cameraMatrix.nativeObjAddr,
             calibDataSupplier().distCoeffs.nativeObjAddr,
             inMat.nativeObjAddr,
@@ -47,10 +51,17 @@ class SLAMFramePipeline(
             foundTvecs
         )
 
-        val (fixedMarkerIds, fixedMarkerRvects, fixedMarkerTvects, fixedMarkerConfidences)
-            = markerSpace.asArrays()
+        // get the known markers as arrays
+        val (
+            fixedMarkerIds,
+            fixedMarkerRvects,
+            fixedMarkerTvects,
+            fixedMarkerConfidences,
+            fixedMarkerCount,
+        ) = markerSpace.asArrays()
 
-        if (foundPosesCount > 0) {
+
+        if (foundMarkersCount > 0) {
             val estimatedPositionRVec = DoubleArray(3) { 0.0 }
             val estimatedPositionTVec = DoubleArray(3) { 0.0 }
 
@@ -58,12 +69,13 @@ class SLAMFramePipeline(
                 calibDataSupplier().cameraMatrix.nativeObjAddr, //in
                 calibDataSupplier().distCoeffs.nativeObjAddr, //in
                 outMat.nativeObjAddr, //in&out
+                fixedMarkerCount, //in
                 fixedMarkerIds, //in
                 fixedMarkerRvects, //in
                 fixedMarkerTvects, //in
                 fixedMarkerConfidences, //in
                 markerSpace.commonLength, //in
-                foundPosesCount, //in
+                foundMarkersCount, //in
                 foundIDs, //in
                 foundRvecs, //in
                 foundTvecs, //in
@@ -71,6 +83,25 @@ class SLAMFramePipeline(
                 estimatedPositionTVec //out
             )
         }
+
+        val mapSizeInPixels = inMat.rows() / 2
+        NativeMethods.renderMap(
+            fixedMarkerRvects,
+            fixedMarkerTvects,
+            mapCameraRotation,
+            mapCameraTranslation,
+            Vec3d.ORIGIN.asDoubleArray(),
+            Vec3d.ORIGIN.asDoubleArray(),
+            PI/2.0,
+            PI/2.0,
+            2400.0,
+            2400.0,
+            mapSizeInPixels,
+            mapSizeInPixels,
+            inMat.cols() - mapSizeInPixels,
+            inMat.rows() - mapSizeInPixels,
+            outMat.nativeObjAddr
+        )
     },
     onCannotProcess = { _, input -> input }
 )

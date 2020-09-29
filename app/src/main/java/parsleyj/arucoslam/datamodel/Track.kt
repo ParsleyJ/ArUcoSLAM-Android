@@ -1,4 +1,4 @@
-package parsleyj.arucoslam.framepipeline
+package parsleyj.arucoslam.datamodel
 
 class Track {
     companion object {

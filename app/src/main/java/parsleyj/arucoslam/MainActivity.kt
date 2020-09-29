@@ -4,9 +4,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-//import android.support.v4.app.ActivityCompat
-//import android.support.v4.content.ContextCompat
-//import android.support.v7.app.AppCompatActivity
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
@@ -18,14 +15,11 @@ import androidx.core.content.ContextCompat
 import kotlinx.android.synthetic.main.activity_main.*
 import org.opencv.android.FixedCameraBridgeViewBase
 import org.opencv.android.OpenCVLoader
-import org.opencv.core.Core
 import org.opencv.core.Mat
 import parsleyj.arucoslam.datamodel.*
 import parsleyj.arucoslam.datamodel.fixedSpace.MarkerTaggedSpace
-import parsleyj.arucoslam.framepipeline.*
-import parsleyj.arucoslam.pipeline.Pipeline
-import parsleyj.arucoslam.pipeline.pipeline
-import parsleyj.kotutils.with
+import parsleyj.arucoslam.framepipeline.SLAMFramePipeline
+import parsleyj.kotutils.joinWithSeparator
 
 
 class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraViewListener2 {
@@ -41,7 +35,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         CalibData.xiaomiMiA1RearCamera
     }
 
-    private lateinit var frameStreamProcessor: FrameStreamProcessor<FrameRecyclableData>
+    private lateinit var slamFramePipeline: SLAMFramePipeline
 
 
     private val markerSpace by lazy {
@@ -52,28 +46,6 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         ).toSLAMSpace()
     }
 
-    //TODO do it only when marker space changes.
-    private val fixedMarkerIds
-        get() = markerSpace.markers
-            .map { it.markerId }
-            .toIntArray()
-
-    private val fixedMarkerRvects
-        get() = markerSpace.markers
-            .map { it.pose3d.rotationVector }
-            .flattenVecs()
-            .toDoubleArray()
-
-    private val fixedMarkerTvects
-        get() = markerSpace.markers
-            .map { it.pose3d.translationVector }
-            .flattenVecs()
-            .toDoubleArray()
-
-    private val fixedMarkerConfidences
-        get() = markerSpace.markers
-            .map { it.markerConfidence }
-            .toDoubleArray()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -152,112 +124,34 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     }
 
 
-    lateinit var pipeline: Pipeline<Mat, Mat>
-
-
     override fun onCameraFrame(inputFrame: FixedCameraBridgeViewBase.CvCameraViewFrame?): Mat? {
         if (inputFrame != null) {
             Log.v(TAG, "inputFrame != null")
             val inputMat = inputFrame.rgba()
 
-            if (!this::pipeline.isInitialized) {
-
-                val poseEstimator = PoseEstimatorComponent(
+            if (!this::slamFramePipeline.isInitialized) {
+                slamFramePipeline = SLAMFramePipeline(
+                    DETECTED_MARKERS_MAX_OUTPUT,
+                    { cameraParameters },
+                    markerSpace,
                     inputMat.size(),
                     inputMat.type(),
-                    cameraParameters
+                    3, // number of parallel workers on frames
                 )
-
-                val stateUpdater = SLAMStateUpdaterComponent()
-
-
-                val slamState = SLAMStateMaintainerComponent()
-
-                val mapRenderer = MapRendererComponent(inputMat.size(), inputMat.type())
-
-                val merger = pipeline<Pair<Mat, Mat>, Mat>(
-                    supplyEmptyOutput = { Mat.zeros(inputMat.size(), inputMat.type()) },
-                    maxProcessors = 4,
-                    block = { (leftImg, rightImg), resultImg ->
-                        Core.addWeighted(leftImg, 1.0, rightImg, 0.7, 0.0, resultImg)
-                    }
-                )
-
-                pipeline = object:Pipeline<Mat, Mat>{
-                    override fun supply(input: Mat?) {
-                        poseEstimator.supply(input)
-                    }
-
-                    override fun retrieve(): Mat {
-                        val (enrichedMat, foundPoses) = poseEstimator.retrieve()
-                        val (prevTrack, prevAllPoses) = slamState.retrieve()
-                        stateUpdater.supply(Triple(foundPoses, prevTrack, prevAllPoses))
-                        val (updatedTrack, updatedAllPoses) = stateUpdater.retrieve()
-                        slamState.supply(updatedTrack with foundPoses)
-                        mapRenderer.supply(Triple(updatedTrack, foundPoses, updatedAllPoses))
-                        merger.supply(enrichedMat with mapRenderer.retrieve())
-                        return merger.retrieve()
-                    }
-
-                }
-            }
-
-            if (!this::frameStreamProcessor.isInitialized) {
-                frameStreamProcessor = FrameStreamProcessor(
-                    inputMat.size(),
-                    inputMat.type(),
-                    3, // number of parallel processors on frames
-                    instantiateOtherData = { // lambda that tells the FrameStreamProcessor how
-                        //  to create a recyclable support data structure
-                        FrameRecyclableData(
-                            foundIDs = IntArray(DETECTED_MARKERS_MAX_OUTPUT) { 0 },
-                            foundRVecs = DoubleArray(DETECTED_MARKERS_MAX_OUTPUT * 3) { 0.0 },
-                            foundTVecs = DoubleArray(DETECTED_MARKERS_MAX_OUTPUT * 3) { 0.0 }
-                        )
-                    }
-                ) { inMat, outMat, (foundIDs, foundRvecs, foundTvecs) ->
-
-                    val foundPosesCount = NativeMethods.detectMarkers(
-                        cameraParameters.cameraMatrix.nativeObjAddr,
-                        cameraParameters.distCoeffs.nativeObjAddr,
-                        inMat.nativeObjAddr,
-                        outMat.nativeObjAddr,
-                        0.079,
-                        DETECTED_MARKERS_MAX_OUTPUT,
-                        foundIDs,
-                        foundRvecs,
-                        foundTvecs
-                    )
-
-
-                    if (foundPosesCount > 0) {
-                        val estimatedPositionRVec = DoubleArray(3) { 0.0 }
-                        val estimatedPositionTVec = DoubleArray(3) { 0.0 }
-
-                        val inliersCount = NativeMethods.estimateCameraPosition(
-                            cameraParameters.cameraMatrix.nativeObjAddr, //in
-                            cameraParameters.distCoeffs.nativeObjAddr, //in
-                            outMat.nativeObjAddr, //in&out
-                            fixedMarkerIds, //in
-                            fixedMarkerRvects, //in
-                            fixedMarkerTvects, //in
-                            fixedMarkerConfidences, //in
-                            markerSpace.commonLength, //in
-                            foundPosesCount, //in
-                            foundIDs, //in
-                            foundRvecs, //in
-                            foundTvecs, //in
-                            estimatedPositionRVec, //out
-                            estimatedPositionTVec //out
-                        )
-                    }
-                }
             }
 
 
-            frameStreamProcessor.supply(inputMat, countFrame())
-            Log.d(TAG, "FrameStream usage = ${frameStreamProcessor.usage()}")
-            return frameStreamProcessor.retrieve()
+            slamFramePipeline.supply(inputMat)
+            val usage = slamFramePipeline.usage()
+            Log.d(TAG, "FrameStream usage = $usage")
+            if (usage > 51.0) {
+                for (i in 0 until 10) {
+                    Log.d(TAG, "USAGE > 51%!" + (0 until i).map { "!" }.joinWithSeparator(""))
+                }
+            }
+            return slamFramePipeline.retrieve()
+
+
         } else {
             return null
         }

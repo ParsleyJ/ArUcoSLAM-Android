@@ -45,7 +45,7 @@ class FrameStreamProcessor<FPOtherDataT>(
     }
 
     /**
-     * Returns the percentage of free processors
+     * Returns the percentage of busy processors
      */
     fun usage(): Double {
         return (processors.filter { it.isBusy() }.count().toDouble()

@@ -174,7 +174,7 @@ void vectorRansac(
 }
 
 
-int fitPositionModel(
+int estimateCameraPose(
         const std::vector<cv::Vec3d> &rvecs,
         const std::vector<cv::Vec3d> &tvecs,
         cv::Vec3d &modelRvec,

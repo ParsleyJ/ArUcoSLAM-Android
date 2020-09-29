@@ -1,27 +1,37 @@
 package parsleyj.arucoslam.pipeline
 
+import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.selects.select
-import parsleyj.arucoslam.defaultDispatcher
-import parsleyj.arucoslam.get
-import parsleyj.arucoslam.list
+import parsleyj.arucoslam.backgroundExec
 import parsleyj.arucoslam.mainDispatcher
-import parsleyj.kotutils.*
+import parsleyj.kotutils.generateIt
 
 
-open class ProcessorPool<InputT, OutputT, SupportDataT>(
-    private val maxProcessors: Int,
+
+open class WorkerPool<InputT, OutputT, SupportDataT>(
+    private val maxWorkers: Int,
     private val supplyEmptyOutput: () -> OutputT,
     private val instantiateSupportData: () -> SupportDataT,
     private val coroutineScope: CoroutineScope = mainDispatcher,
     private val jobTimeout: Long = 1000L,
     private val onCannotProcess: (OutputT, InputT) -> OutputT = { _, _ -> supplyEmptyOutput() },
     private val block: suspend (InputT, OutputT, SupportDataT) -> Unit,
-):Pipeline<InputT, OutputT> {
+) {
     private var lastResult = supplyEmptyOutput()
     private var lastResultToken = -1L
-    protected val processors = mutableListOf<Processor<InputT, OutputT, SupportDataT>>()
-    private val tokenGenerator = Pipeline.tokenGen().iterator()
+    protected val workers = mutableListOf<Worker<InputT, OutputT, SupportDataT>>()
+    private val tokenGenerator = object:Iterator<Long>{
+        var count = 0L
+        override fun hasNext(): Boolean {
+            return true
+        }
+
+        override fun next(): Long {
+            return count++
+        }
+
+    }
 
     private suspend fun <E : Job> Iterable<E>.joinFirst(): E = select {
         for (job in this@joinFirst) {
@@ -34,51 +44,29 @@ open class ProcessorPool<InputT, OutputT, SupportDataT>(
         joinFirst().getCompleted()
 
 
-    override fun supply(input: InputT?) {
+    fun supply(input: InputT) {
         val token = tokenGenerator.next()
-        // if there are no free processors, do not process the frame.
-        val proc = getFreeProcessor()
-        if (proc == null) {
-            // we cannot find a free processor.
-            // let's just return the input unprocessed
+        Log.d("WorkerPool", "Supply invoked - token: $token")
+        // if there are no free workers, do not process the frame.
+        val worker = getFreeWorker()
+        if (worker == null) {
+            // we cannot find a free worker.
+            // let's see what to do using onCannotProcess
             if (input != null) {
                 lastResult = onCannotProcess(lastResult, input)
             }
         } else {
-            // we have a free frame processor
+            // we have a free frame worker
             // we assign the input frame to it
-            proc.assignInput(input, token)
-            coroutineScope.launch {
-                // let's asynchronously start the job
-                val job = coroutineScope.async { just(proc.computeAsync().await()) }
-                //starts a race between the two coroutines:
-                // - the first one executes the processor's job and then returns an OSome
-                // - the second one simply awaits for jobTimeout milliseconds and then returns ONothing
-                val optionalResult: Maybe<Pair<OutputT, Long>> = list[
-                        job,
-                        coroutineScope.async {
-                            delay(jobTimeout)
-                            return@async nothing<Pair<OutputT, Long>>()
-                        }
-                ].awaitFirst()
+            worker.assignInput(input, token)
 
-
-                when(optionalResult){
-                    is MJust<Pair<OutputT, Long>> -> {
-                        val (result, orderToken) = optionalResult.get
-                        // sets as last result if the order is correct
-                        synchronized(this@ProcessorPool) {
-                            if (lastResultToken < orderToken) {
-                                lastResult = result
-                                lastResultToken = orderToken
-                            }
-                        }
-                    }
-                    is MNothing<Pair<OutputT, Long>> ->{
-                        //if after 'jobTimeout' milliseconds the job is not done, it is cancelled
-                        job.cancel()
-                    }
-                }
+            // let's asynchronously start the job
+            backgroundExec {
+                val job = worker.compute()
+                //if after 'jobTimeout' milliseconds the job is not done, it is cancelled
+                delay(jobTimeout)
+                job?.cancel()
+                worker.isActive = false
             }
         }
     }
@@ -86,38 +74,39 @@ open class ProcessorPool<InputT, OutputT, SupportDataT>(
     /**
      * Retrieves the last computed result
      */
-    override fun retrieve(): OutputT {
+    fun retrieve(): OutputT {
+        Log.d("WorkerPool", "Retrieve invoked - last result token: $lastResultToken")
         return lastResult
     }
 
     /**
-     * Sorts processors by bringing the free ones at the beginning
+     * Sorts workers by bringing the free ones at the beginning
      */
-    private fun sortProcessors() {
-        processors.sortBy { if (it.isBusy()) 1 else -1 }
+    private fun sortWorkers() {
+        workers.sortBy { if (it.isBusy()) 1 else -1 }
     }
 
     /**
-     * It finds a free processor if available. If not, it creates new frame processor.
+     * It finds a free worker if available. If not, it creates new frame worker.
      * If the creation is not possible, it returns null.
      */
-    private fun getFreeProcessor(): Processor<InputT, OutputT, SupportDataT>? {
-        if (processors.isEmpty()) {
-            val frameProcessor = createProcessor()
-            processors.add(frameProcessor)
+    private fun getFreeWorker(): Worker<InputT, OutputT, SupportDataT>? {
+        if (workers.isEmpty()) {
+            val frameProcessor = createWorker()
+            workers.add(frameProcessor)
             return frameProcessor
         }
 
-        sortProcessors()
+        sortWorkers()
 
-        return if (processors.first().isBusy()) {
+        return if (workers.first().isBusy()) {
             // if the first one is busy, all of them are.
-            // let's try to instantiate one processor
-            if (processors.size < maxProcessors) {
-                // we can create a new processor
-                val frameProcessor = createProcessor()
-                processors.add(frameProcessor)
-                // returning the new processor
+            // let's try to instantiate one worker
+            if (workers.size < maxWorkers) {
+                // we can create a new worker
+                val frameProcessor = createWorker()
+                workers.add(frameProcessor)
+                // returning the new worker
                 frameProcessor
             } else {
                 // all busy, cannot instantiate more, return null
@@ -125,17 +114,32 @@ open class ProcessorPool<InputT, OutputT, SupportDataT>(
             }
         } else {
             // simply return the first (which is not busy)
-            processors.first()
+            workers.first()
         }
 
     }
 
-    private fun createProcessor(): Processor<InputT, OutputT, SupportDataT> {
-        return Processor(
+    private fun createWorker(): Worker<InputT, OutputT, SupportDataT> {
+        return Worker(
             instantiateSupportData(),
             supplyEmptyOutput(),
             coroutineScope,
-            block,
+            block = block,
+            onDone = worker@{
+                synchronized(this@WorkerPool) {
+                    if (lastResultToken < this.requestToken) {
+                        lastResult = this.retrieveResult()
+                        lastResultToken = this.requestToken
+                    }
+                }
+            },
         )
+    }
+
+    /**
+     * Returns the percentage of busy workers
+     */
+    fun usage(): Double {
+        return (workers.filter { it.isBusy() }.count().toDouble() / maxWorkers.toDouble()) * 100.0
     }
 }

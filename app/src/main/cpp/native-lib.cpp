@@ -97,6 +97,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
         jlong cameraMatrixAddr,
         jlong distCoeffsAddr,
         jlong inputMatAddr,
+        jint fixedMarkerCount,
         jintArray fixed_markers,
         jdoubleArray fixed_rvects,
         jdoubleArray fixed_tvects,
@@ -122,11 +123,24 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
             env,
             fixed_markers,
             &JNIEnv::GetIntArrayElements,
-            fixedMarkersIDs
+            fixedMarkersIDs,
+            0,
+            fixedMarkerCount
     );
 
-    pushjDoubleArrayToVectorOfVec3ds(env, fixed_tvects, fixedMarkersTvecs);
-    pushjDoubleArrayToVectorOfVec3ds(env, fixed_rvects, fixedMarkersRvecs);
+    pushjDoubleArrayToVectorOfVec3ds(
+            env,
+            fixed_tvects,
+            fixedMarkersTvecs,
+            0,
+            fixedMarkerCount
+    );
+    pushjDoubleArrayToVectorOfVec3ds(
+            env,
+            fixed_rvects,
+            fixedMarkersRvecs,
+            0,
+            fixedMarkerCount);
 
     std::unordered_map<int, double> markerConfidenceMap;
     populateMapFromJavaArrays<jintArray, jdoubleArray, int, double>(
@@ -159,7 +173,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     cv::Mat tmpMat;
     cv::cvtColor(inputMat, tmpMat, CV_RGBA2RGB);
 
-    draw2DBoxFrame(tmpMat);
+//    draw2DBoxFrame(tmpMat);
 
 
 //    for (int i = 0; i < foundMarkersIDs.size(); i++) {
@@ -167,7 +181,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
         int foundMarkerID = foundMarkersIDs[i];
         auto findFixedMarkerIndex = std::find(fixedMarkersIDs.begin(), fixedMarkersIDs.end(),
                                               foundMarkerID);
-        double x, y, theta;
+//        double x, y, theta;
         if (findFixedMarkerIndex != fixedMarkersIDs.end()) {
             int fixedMarkerIndex = std::distance(fixedMarkersIDs.begin(), findFixedMarkerIndex);
 
@@ -185,7 +199,8 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
             );
 
             double markerConfidence = 0.0;
-            if (markerConfidenceMap.find(fixedMarkersIDs[fixedMarkerIndex]) != markerConfidenceMap.end()) {
+            if (markerConfidenceMap.find(fixedMarkersIDs[fixedMarkerIndex]) !=
+                markerConfidenceMap.end()) {
                 markerConfidence = markerConfidenceMap[fixedMarkersIDs[fixedMarkerIndex]];
             }
 
@@ -201,36 +216,36 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
             p_for_criticalSectionEnd
 
 
-            fromRTvectsTo2Dpose(recomputedRvec, recomputedTvec, x, y, theta);
-            drawObjectPosition(tmpMat, x, y, theta,
-                               cv::Scalar(100, 0, 0), cv::MarkerTypes::MARKER_TILTED_CROSS, 5,
-                               10.0, cv::Scalar(100, 100, 100));
+//            fromRTvectsTo2Dpose(recomputedRvec, recomputedTvec, x, y, theta);
+//            drawObjectPosition(tmpMat, x, y, theta,
+//                               cv::Scalar(100, 0, 0), cv::MarkerTypes::MARKER_TILTED_CROSS, 5,
+//                               10.0, cv::Scalar(100, 100, 100));
 
-            fromRTvectsTo2Dpose(fixedMarkersRvecs[fixedMarkerIndex],
-                                fixedMarkersTvecs[fixedMarkerIndex],
-                                x, y, theta);
-
-
-            drawObjectPosition(tmpMat, x, y, theta,
-                               cv::Scalar(0, 255, 0), cv::MarkerTypes::MARKER_SQUARE, 5,
-                               0.0);
+//            fromRTvectsTo2Dpose(fixedMarkersRvecs[fixedMarkerIndex],
+//                                fixedMarkersTvecs[fixedMarkerIndex],
+//                                x, y, theta);
+//
+//
+//            drawObjectPosition(tmpMat, x, y, theta,
+//                               cv::Scalar(0, 255, 0), cv::MarkerTypes::MARKER_SQUARE, 5,
+//                               0.0);
         }
     };
 
     cv::cvtColor(tmpMat, inputMat, CV_RGB2RGBA);
 
     int inliersCount;
-    cv::Vec3d modelRvec, modelTvec;
-    inliersCount = fitPositionModel(positionRvecs, positionTvecs,
-                                    modelRvec, modelTvec
-                                    , positionConfidences //TODO
-                                    );
+    cv::Vec3d cameraRvec, cameraTvec;
+    inliersCount = estimateCameraPose(positionRvecs, positionTvecs,
+                                      cameraRvec, cameraTvec,
+                                      positionConfidences //TODO
+    );
 
-    fromVec3dTojDoubleArray(env, modelRvec, outRvec);
-    fromVec3dTojDoubleArray(env, modelTvec, outTvec);
+    fromVec3dTojDoubleArray(env, cameraRvec, outRvec);
+    fromVec3dTojDoubleArray(env, cameraTvec, outTvec);
 
-    double estimatedX, estimatedY, estimatedTheta;
-    fromRTvectsTo2Dpose(modelRvec, modelTvec, estimatedX, estimatedY, estimatedTheta);
+//    double estimatedX, estimatedY, estimatedTheta;
+//    fromRTvectsTo2Dpose(cameraRvec, cameraTvec, estimatedX, estimatedY, estimatedTheta);
 
     std::ostringstream a;
     a << "INLIERS=" << inliersCount;
@@ -241,8 +256,8 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
                 cv::Scalar(0, 0, 255));
 
 
-    drawObjectPosition(inputMat, estimatedX, estimatedY, estimatedTheta);
-    drawCameraRoll(inputMat, modelRvec[1], 30);
+//    drawObjectPosition(inputMat, estimatedX, estimatedY, estimatedTheta);
+//    drawCameraRoll(inputMat, cameraRvec[1], 30);
     return inliersCount;
 }
 
@@ -274,4 +289,140 @@ Java_parsleyj_arucoslam_NativeMethods_composeRT(
     );
     fromVec3dTojDoubleArray(env, tvec, out_tvec);
     fromVec3dTojDoubleArray(env, rvec, out_rvec);
+}
+
+
+void invertRT(
+        const cv::Vec3d &inR,
+        const cv::Vec3d &inT,
+        cv::Vec3d &outR,
+        cv::Vec3d &outT
+) {
+    cv::Mat Rmatrix;
+    cv::Rodrigues(inR, Rmatrix);
+    cv::Rodrigues(Rmatrix.t(), outR);
+    cv::Mat x(-(Rmatrix.t() * cv::Mat(inT)));
+
+    outT[0] = x.at<double>(0, 0);
+    outT[1] = x.at<double>(1, 0);
+    outT[2] = x.at<double>(2, 0);
+}
+
+double cotan(double i) {
+    return 1.0 / tan(i);
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_parsleyj_arucoslam_NativeMethods_renderMap(
+        JNIEnv *env,
+        jclass clazz,
+        jdoubleArray marker_rvects,
+        jdoubleArray marker_tvects,
+        jdoubleArray mapCameraRotation_j,
+        jdoubleArray mapCameraTranslation_j,
+        jdoubleArray phonePositionRvect_j,
+        jdoubleArray phonePositionTvect_j,
+        jdouble mapCameraFovX,
+        jdouble mapCameraFovY,
+        jdouble mapCameraApertureX,
+        jdouble mapCameraApertureY,
+        jint mapCameraPixelsX,
+        jint mapCameraPixelsY,
+        jint mapTopLeftCornerX,
+        jint mapTopLeftCornerY,
+        jlong result_mat_addr
+) {
+    //TODO define or obtain map camera
+    //TODO inputs: fovx, fovy, aperturex, aperturey, pixelsx, pixelsy
+    double f_x = mapCameraApertureX / 2.0 * cotan(mapCameraFovX / 2.0);
+    double f_y = mapCameraApertureY / 2.0 * cotan(mapCameraFovY / 2.0);
+    double c_x = static_cast<double>(mapCameraPixelsX) / 2.0;
+    double c_y = static_cast<double>(mapCameraPixelsY) / 2.0;
+
+    cv::Mat mapCameraMatrix = (cv::Mat_<double>(3, 3) <<
+                                                      f_x, 0.0, c_x,
+            0.0, f_y, c_y,
+            0.0, 0.0, 1.0
+    );
+    cv::Mat emptyDistortionCoeffs = cv::Mat::zeros(1,4,CV_64FC1);
+
+    // Transformation to switch from room's coord sys to camera's coord sys
+    cv::Vec3d mapCameraRotation, mapCameraTranslation;
+    fromjDoubleArrayToVec3d(env, mapCameraRotation_j, mapCameraRotation);
+    fromjDoubleArrayToVec3d(env, mapCameraTranslation_j, mapCameraTranslation);
+
+    cv::Vec3d phonePositionRvect, phonePositionTvect;
+    fromjDoubleArrayToVec3d(env, phonePositionRvect_j, phonePositionRvect);
+    fromjDoubleArrayToVec3d(env, phonePositionTvect_j, phonePositionTvect);
+
+    std::vector<cv::Vec3d> markersTvecs, markersRvecs;
+    pushjDoubleArrayToVectorOfVec3ds(
+            env,
+            marker_tvects,
+            markersTvecs
+    );
+
+    pushjDoubleArrayToVectorOfVec3ds(
+            env,
+            marker_rvects,
+            markersRvecs
+    );
+
+    std::vector<cv::Point3f> origin;
+    origin.emplace_back(0.0, 0.0, 0.0);
+    origin.emplace_back(0.1, 0.0, 0.0);
+    origin.emplace_back(0.0, 0.1, 0.0);
+    origin.emplace_back(0.0, 0.0, 0.1);
+    std::vector<cv::Point2f> markersImagePoints;
+
+    p_for(i, markersRvecs.size()) {
+//         Transformation to switch from marker's coord sys to room's coord sys
+        cv::Vec3d invertedMarkerRvec, invertedMarkerTvec;
+        invertRT(markersRvecs[i], markersTvecs[i],
+                 invertedMarkerRvec, invertedMarkerTvec);
+
+        // Transformation to switch from marker's coord sys to mapCamera's coord sys
+        cv::Vec3d fromMarkerToMapR, fromMarkerToMapT;
+        cv::composeRT(
+                invertedMarkerRvec, invertedMarkerTvec,
+//                markersRvecs[i], markersTvecs[i],
+                mapCameraRotation, mapCameraTranslation,
+                fromMarkerToMapR, fromMarkerToMapT
+        );
+        std::vector<cv::Point2f> projectedPoints;
+        __android_log_print(ANDROID_LOG_DEBUG, "ABABBABABABBABABABABB", "a");
+        cv::projectPoints(
+                origin,
+                fromMarkerToMapR,
+                fromMarkerToMapT,
+                mapCameraMatrix,
+                emptyDistortionCoeffs,
+                projectedPoints
+        );
+        __android_log_print(ANDROID_LOG_DEBUG, "ABABBABABABBABABABABB", "b");
+
+        p_for_criticalSectionBegin
+            markersImagePoints.push_back(projectedPoints[0]);
+            markersImagePoints.push_back(projectedPoints[1]);
+            markersImagePoints.push_back(projectedPoints[2]);
+            markersImagePoints.push_back(projectedPoints[3]);
+        p_for_criticalSectionEnd
+    };
+
+    cv::Mat imageMat = *castToMatPtr(result_mat_addr);
+    cv::Point2f topLeftCorner = cv::Point2f(mapTopLeftCornerX, mapTopLeftCornerY);
+    draw2DBoxFrame(imageMat, topLeftCorner);
+
+    for (auto &markerPoint:markersImagePoints) {
+        cv::drawMarker(imageMat, topLeftCorner + markerPoint,
+                       cv::Scalar(255, 0, 0),
+                       cv::MARKER_STAR, 10);
+    }
+
+    cv::line(imageMat, topLeftCorner + markersImagePoints[0], topLeftCorner + markersImagePoints[1], cv::Scalar(0, 0, 255), 3);
+    cv::line(imageMat, topLeftCorner + markersImagePoints[0], topLeftCorner + markersImagePoints[2], cv::Scalar(0, 255, 0), 3);
+    cv::line(imageMat, topLeftCorner + markersImagePoints[0], topLeftCorner + markersImagePoints[3], cv::Scalar(255, 0, 0), 3);
+
+
 }

@@ -9,6 +9,21 @@
 #include "utils.h"
 
 
+void draw2DBoxFrame(cv::Mat &_image, cv::Point2f topLeftCorner) {
+    int sideX = _image.cols - topLeftCorner.x;
+    int sideY = _image.rows - topLeftCorner.y;
+
+    // draw box
+    cv::line(_image,
+             topLeftCorner, cv::Point2f(_image.cols, _image.rows - sideY),
+             cv::Scalar(0, 255, 0), 3);
+    cv::line(_image,
+             topLeftCorner, cv::Point2f(_image.cols - sideX, _image.rows),
+             cv::Scalar(0, 255, 0), 3);
+    cv::rectangle(_image, topLeftCorner, cv::Point(_image.cols, _image.rows),
+                  cv::Scalar(0, 0, 0), cv::FILLED);
+}
+
 void draw2DBoxFrame(cv::Mat &_image) {
     int side = _image.rows / 2;
     cv::Point2f origin((_image.cols - side / 2), _image.rows - side);
