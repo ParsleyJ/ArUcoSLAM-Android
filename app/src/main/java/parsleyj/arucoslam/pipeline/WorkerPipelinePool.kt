@@ -5,11 +5,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.selects.select
 import parsleyj.arucoslam.backgroundExec
 import parsleyj.arucoslam.mainDispatcher
-import parsleyj.kotutils.generateIt
 
 
-
-open class WorkerPool<InputT, OutputT, SupportDataT>(
+open class WorkerPipelinePool<InputT, OutputT, SupportDataT>(
     private val maxWorkers: Int,
     private val supplyEmptyOutput: () -> OutputT,
     private val instantiateSupportData: () -> SupportDataT,
@@ -126,7 +124,7 @@ open class WorkerPool<InputT, OutputT, SupportDataT>(
             coroutineScope,
             block = block,
             onDone = worker@{
-                synchronized(this@WorkerPool) {
+                synchronized(this@WorkerPipelinePool) {
                     if (lastResultToken < this.requestToken) {
                         lastResult = this.retrieveResult()
                         lastResultToken = this.requestToken

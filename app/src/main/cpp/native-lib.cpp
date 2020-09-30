@@ -273,7 +273,6 @@ Java_parsleyj_arucoslam_NativeMethods_composeRT(
     fromVec3dToJdoubleArray(env, rvec, out_rvec);
 }
 
-
 void invertRT(
         const cv::Vec3d &inR,
         const cv::Vec3d &inT,
@@ -288,6 +287,24 @@ void invertRT(
     outT[0] = x.at<double>(0, 0);
     outT[1] = x.at<double>(1, 0);
     outT[2] = x.at<double>(2, 0);
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_parsleyj_arucoslam_NativeMethods_invertRT(
+        JNIEnv *env,
+        jclass clazz,
+        jdoubleArray inrvec_j,
+        jdoubleArray intvec_j,
+        jdoubleArray outrvec_j,
+        jdoubleArray outtvec_j
+) {
+    cv::Vec3d inrvec, intvec, outrvec, outtvec;
+    fromjDoubleArrayToVec3d(env, inrvec_j, inrvec);
+    fromjDoubleArrayToVec3d(env, intvec_j, intvec);
+    invertRT(inrvec, intvec, outrvec, outtvec);
+    fromVec3dToJdoubleArray(env, outrvec, outrvec_j);
+    fromVec3dToJdoubleArray(env, outtvec, outtvec_j);
 }
 
 double cotan(double i) {
@@ -308,13 +325,16 @@ Java_parsleyj_arucoslam_NativeMethods_renderMap(
         jdoubleArray marker_tvects,
         jdoubleArray mapCameraRotation_j,
         jdoubleArray mapCameraTranslation_j,
-        jint phonePoseStatus,
-        jdoubleArray phonePositionRvect_j,
-        jdoubleArray phonePositionTvect_j,
         jdouble mapCameraFovX,
         jdouble mapCameraFovY,
         jdouble mapCameraApertureX,
         jdouble mapCameraApertureY,
+        jint phonePoseStatus,
+        jdoubleArray phonePositionRvect_j,
+        jdoubleArray phonePositionTvect_j,
+        jint previousPhonePosesCount,
+        jdoubleArray previousPhonePosesRvects_j,
+        jdoubleArray previousPhonePosesTvects_j,
         jint mapCameraPixelsX,
         jint mapCameraPixelsY,
         jint mapTopLeftCornerX,
@@ -355,6 +375,18 @@ Java_parsleyj_arucoslam_NativeMethods_renderMap(
             markersRvecs
     );
 
+    std::vector<cv::Vec3d> previousPhonePosesRvects, previousPhonePosesTvects;
+    pushjDoubleArrayToVectorOfVec3ds(
+            env,
+            previousPhonePosesRvects_j,
+            previousPhonePosesRvects
+    );
+    pushjDoubleArrayToVectorOfVec3ds(
+            env,
+            previousPhonePosesTvects_j,
+            previousPhonePosesTvects
+    );
+
     std::vector<cv::Point3f> origin;
     origin.emplace_back(0.0, 0.0, 0.0);
     std::vector<cv::Point2f> markersImagePoints;
@@ -389,9 +421,38 @@ Java_parsleyj_arucoslam_NativeMethods_renderMap(
         p_for_criticalSectionEnd
     };
 
+    std::vector<cv::Point2f> trackPoints(previousPhonePosesCount);
+    p_for(i, previousPhonePosesCount){
+        cv::Vec3d invertedPrevPoseR, invertedPrevPoseT;
+        invertRT(previousPhonePosesRvects[i], previousPhonePosesTvects[i],
+                invertedPrevPoseR, invertedPrevPoseT);
+
+        cv::Vec3d fromPrevPoseToMapR, fromPrevPoseToMapT;
+        cv::composeRT(invertedPrevPoseR, invertedPrevPoseT,
+                mapCameraRotation, mapCameraTranslation,
+                fromPrevPoseToMapR, fromPrevPoseToMapT);
+
+        std::vector<cv::Point2f> projectedTrackPoints;
+        cv::projectPoints(
+                origin,
+                fromPrevPoseToMapR,
+                fromPrevPoseToMapT,
+                mapCameraMatrix,
+                emptyDistortionCoeffs,
+                projectedTrackPoints
+        );
+
+        trackPoints[i] = projectedTrackPoints[0];
+    };
+
     cv::Mat imageMat = *castToMatPtr(result_mat_addr);
     cv::Point2f topLeftCorner = cv::Point2f(mapTopLeftCornerX, mapTopLeftCornerY);
     draw2DBoxFrame(imageMat, topLeftCorner);
+
+    cv::Scalar yellow(255, 255, 0);
+    p_for(i, trackPoints.size()-1){
+        cv::line(imageMat, topLeftCorner+trackPoints[i], topLeftCorner+trackPoints[i + 1], yellow);
+    };
 
     if (phonePoseStatus != PHONE_POSE_STATUS_UNAVAILABLE) {
         double cameraRaysLength = 0.3;
@@ -497,7 +558,6 @@ Java_parsleyj_arucoslam_NativeMethods_renderMap(
                        cv::MARKER_SQUARE, 10);
     }
 
-
 }
 
 
@@ -531,7 +591,6 @@ Java_parsleyj_arucoslam_NativeMethods_poseCentroid(
             offset,
             count
     );
-
 
     //TODO weights
     cv::Vec3d outTvec, outRvec;

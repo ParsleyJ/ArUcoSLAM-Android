@@ -35,6 +35,13 @@ public class NativeMethods {
             double[] outTvec
     );
 
+    public static native void invertRT(
+            double[] inrvec,
+            double[] intvec,
+            double[] outrvec,
+            double[] outtvec
+    );
+
     public static native void composeRT(
             double[] inRvec1,
             double[] inTvec1,
@@ -64,13 +71,16 @@ public class NativeMethods {
             double[] fixedTVects,
             double[] mapCameraPoseRotation,
             double[] mapCameraPoseTranslation,
-            int phonePoseStatus,
-            double[] phonePositionRvect,
-            double[] phonePositionTvect,
             double mapCameraFovX,
             double mapCameraFovY,
             double mapCameraApertureX,
             double mapCameraApertureY,
+            int phonePoseStatus,
+            double[] phonePositionRvect,
+            double[] phonePositionTvect,
+            int previousPhonePosesCount,
+            double[] previousPhonePosesRvects,
+            double[] previousPhonePosesTvects,
             int mapCameraPixelsX,
             int mapCameraPixelsY,
             int mapTopLeftCornerX,

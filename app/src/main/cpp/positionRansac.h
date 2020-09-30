@@ -28,8 +28,8 @@ double meanAngle(const ITERABLE &c, const std::vector<double>& weights = std::ve
     double y = 0.0;
     int i = 0;
     while (it != end) {
-        x += cos(*it * weights[i]);
-        y += sin(*it * weights[i]);
+        x += cos(*it * getWeight(i, weights));
+        y += sin(*it * getWeight(i, weights));
         it = std::next(it);
         i++;
     }
@@ -42,20 +42,26 @@ void computeAngleCentroid(
         cv::Vec3d &angleCentroid,
         std::vector<double> weights = std::vector<double>()
 ) {
+    __android_log_print(ANDROID_LOG_DEBUG, "BBBBBBBBBBBBBBBBBBBBBBBBBB", "started");
     std::vector<double> tmp;
     tmp.reserve(rvecs.size());
 
 
     for (int j = 0; j < 3; j++) {
+        __android_log_print(ANDROID_LOG_DEBUG, "BBBBBBBBBBBBBBBBBBBBBBBBBB", "for1 %d", j);
         double weightSum = 0.0;
         for (int i = 0; i < rvecs.size(); i++) {
-            double weight = getWeight(i);
+            double weight = getWeight(i, weights);
             weightSum += weight;
             tmp.push_back(rvecs[i][j] * weight);
         }
+        __android_log_print(ANDROID_LOG_DEBUG, "BBBBBBBBBBBBBBBBBBBBBBBBBB", "for2 %d", j);
         angleCentroid[j] = meanAngle(tmp);
+        __android_log_print(ANDROID_LOG_DEBUG, "BBBBBBBBBBBBBBBBBBBBBBBBBB", "for3 %d", j);
         tmp.clear();
     }
+    __android_log_print(ANDROID_LOG_DEBUG, "BBBBBBBBBBBBBBBBBBBBBBBBBB", "end");
+
 }
 
 

@@ -10,7 +10,7 @@ import parsleyj.arucoslam.datamodel.Track
 import parsleyj.arucoslam.datamodel.Vec3d
 import parsleyj.arucoslam.datamodel.slamspace.SLAMMarker
 import parsleyj.arucoslam.datamodel.slamspace.SLAMSpace
-import parsleyj.arucoslam.pipeline.WorkerPool
+import parsleyj.arucoslam.pipeline.WorkerPipelinePool
 import kotlin.math.PI
 
 
@@ -27,7 +27,7 @@ class SLAMFramePipeline(
     private val jobTimeout: Long = 1000L,
     var mapCameraRotation: Vec3d = Vec3d(-PI / 2.0, 0.0, 0.0),
     var mapCameraTranslation: Vec3d = Vec3d(0.0, -1.0, 10.0),
-) : WorkerPool<Mat, Mat, FrameRecyclableData>(
+) : WorkerPipelinePool<Mat, Mat, FrameRecyclableData>(
     maxWorkers,
     { Mat.zeros(frameSize, frameType) },
     instantiateSupportData = { // lambda that tells the FrameStreamProcessor how
@@ -109,6 +109,7 @@ class SLAMFramePipeline(
             // evaluate the validity of the estimate;
             // if the estimated pose is valid
             validNewPhonePoseAvailable = poseValidityConstraints.estimatedPoseIsValid(
+                currentTimestamp,
                 estimatedPose,
                 track,
                 knownMarkersFoundCount,
@@ -130,7 +131,7 @@ class SLAMFramePipeline(
                     markerSpace.addIfNotPresent(
                         SLAMMarker(
                             foundIDs[i],
-                            Pose3d(
+                            estimatedPose * Pose3d(
                                 Vec3d(
                                     foundRvecs[i*3],
                                     foundRvecs[i*3+1],
@@ -141,7 +142,7 @@ class SLAMFramePipeline(
                                     foundTvecs[i*3+1],
                                     foundTvecs[i*3+2],
                                 )
-                            ),
+                            ).invert(), //TODO invert in place
                             1.0 //TODO confidence
                         )
                     )
@@ -164,21 +165,39 @@ class SLAMFramePipeline(
         }
 
         NativeMethods.renderMap(
+            // currently known markers:
             fixedMarkerRvects,
             fixedMarkerTvects,
+
+            // pose of the "virtual" map camera
             mapCameraRotation.asDoubleArray(),
             mapCameraTranslation.asDoubleArray(),
+
+            // horizontal and vertical FOV of the virtual camera
+            PI / 2.0,
+            PI / 2.0,
+
+            // horizontal and vertical sensor aperture of the virtual camera
+            2400.0,
+            2400.0,
+
+            // info about the current phone pose
             phonePoseStatus,
             estimatedPositionRVec.asDoubleArray(),
             estimatedPositionTVec.asDoubleArray(),
-            PI / 2.0,
-            PI / 2.0,
-            2400.0,
-            2400.0,
+
+            // history of positions
+            track.longTermTrackTimestamps.size,
+            track.longTermTrackRvecs.elementData,
+            track.longTermTrackTvecs.elementData,
+
+            // size and topLeft corner position of the map box
             mapSizeInPixels,
             mapSizeInPixels,
             inMat.cols() - mapSizeInPixels,
             inMat.rows() - mapSizeInPixels,
+
+            // mat on which the map box will be rendered
             outMat.nativeObjAddr
         )
     },

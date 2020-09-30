@@ -6,13 +6,17 @@ import parsleyj.arucoslam.NativeMethods
 inline class Pose3d(private val pair: Pair<Vec3d, Vec3d>) {
     constructor(
         rVec: Vec3d,
-        tVec: Vec3d
+        tVec: Vec3d,
     ) : this(
         Pair(
             rVec,
             tVec
         )
     )
+
+    constructor() : this(Vec3d(), Vec3d())
+
+
 
     val rotationVector: Vec3d
         get() = pair.first
@@ -40,8 +44,19 @@ inline class Pose3d(private val pair: Pair<Vec3d, Vec3d>) {
         return this * Pose3d(Vec3d.ORIGIN, translationVector)
     }
 
-    fun rotate(rotationVector:Vec3d): Pose3d {
+    fun rotate(rotationVector: Vec3d): Pose3d {
         return this * Pose3d(rotationVector, Vec3d.ORIGIN)
+    }
+
+    fun invert():Pose3d{
+        val result = Pose3d()
+        NativeMethods.invertRT(
+            rotationVector.asDoubleArray(),
+            translationVector.asDoubleArray(),
+            result.rotationVector.asDoubleArray(),
+            result.translationVector.asDoubleArray()
+        )
+        return result
     }
 
     companion object {

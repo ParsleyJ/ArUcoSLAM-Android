@@ -56,7 +56,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
 
     private val poseValidityConstraints by lazy {
         PoseValidityConstraints(
-
+            0.8 // not expected to exceed 0.8 meters per second when detecting a new pose
         )
     }
 
