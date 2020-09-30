@@ -44,11 +44,27 @@ public class NativeMethods {
             double[] outTvec
     );
 
+    public static native void poseCentroid(
+            double[] inRvecs,
+            double[] inTvecs,
+            double[] weights,
+            int offset,
+            int count,
+            double[] outRvec,
+            double[] outTvec
+    );
+
+    public static final int PHONE_POSE_STATUS_INVALID = -1;
+    public static final int PHONE_POSE_STATUS_UNAVAILABLE = 0;
+    public static final int PHONE_POSE_STATUS_UPDATED = 1;
+    public static final int PHONE_POSE_STATUS_LAST_KNOWN = 2;
+
     public static native void renderMap(
             double[] fixedRVects,
             double[] fixedTVects,
             double[] mapCameraPoseRotation,
             double[] mapCameraPoseTranslation,
+            int phonePoseStatus,
             double[] phonePositionRvect,
             double[] phonePositionTvect,
             double mapCameraFovX,

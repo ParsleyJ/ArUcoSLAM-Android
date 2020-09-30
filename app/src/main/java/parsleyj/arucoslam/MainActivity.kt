@@ -18,6 +18,7 @@ import org.opencv.android.OpenCVLoader
 import org.opencv.core.Mat
 import parsleyj.arucoslam.datamodel.*
 import parsleyj.arucoslam.datamodel.fixedSpace.MarkerTaggedSpace
+import parsleyj.arucoslam.framepipeline.PoseValidityConstraints
 import parsleyj.arucoslam.framepipeline.SLAMFramePipeline
 import parsleyj.kotutils.joinWithSeparator
 
@@ -46,6 +47,18 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         ).toSLAMSpace()
     }
 
+    private val track by lazy {
+        Track(
+            1000L, // collecting with high granularity for 1 second
+            40 // we dont'expect to collect more than 40 poses in a second
+        )
+    }
+
+    private val poseValidityConstraints by lazy {
+        PoseValidityConstraints(
+
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -134,6 +147,8 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                     DETECTED_MARKERS_MAX_OUTPUT,
                     { cameraParameters },
                     markerSpace,
+                    track,
+                    poseValidityConstraints,
                     inputMat.size(),
                     inputMat.type(),
                     3, // number of parallel workers on frames

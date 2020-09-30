@@ -13,7 +13,7 @@ package parsleyj.arucoslam.datamodel
  * in this regard, please be careful by optimizing using [addFromArray] and [addAll] when adding
  * multiple elements.
  */
-class MonotonicDoubleList(size: Int, init: (Int) -> Double) : List<Double> {
+class MonotonicDoubleList(initalSize: Int, init: (Int) -> Double) : List<Double> {
     companion object {
         const val DEFAULT_CAPACITY = 10
         private const val MAX_ARRAY_SIZE = Int.MAX_VALUE - 8
@@ -27,7 +27,7 @@ class MonotonicDoubleList(size: Int, init: (Int) -> Double) : List<Double> {
 
     constructor(collection: List<Double>) : this(collection.size, collection::get)
 
-    var elementData = DoubleArray(size, init)
+    var elementData = DoubleArray(initalSize, init)
         private set
 
     override val size: Int

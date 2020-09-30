@@ -88,7 +88,7 @@ void getVec3dFromBuffer(const jdouble *buf, cv::Vec3d &outVec){
     outVec[2] = buf[2];
 }
 
-void fromVec3dTojDoubleArray(JNIEnv* env, const cv::Vec3d& inVec, jdoubleArray outArray){
+void fromVec3dToJdoubleArray(JNIEnv* env, const cv::Vec3d& inVec, jdoubleArray outArray){
     env->SetDoubleArrayRegion(outArray, 0, 3, inVec.val);
 }
 

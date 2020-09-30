@@ -173,7 +173,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     cv::Mat tmpMat;
     cv::cvtColor(inputMat, tmpMat, CV_RGBA2RGB);
 
-//    draw2DBoxFrame(tmpMat);
+
 
 
 //    for (int i = 0; i < foundMarkersIDs.size(); i++) {
@@ -181,7 +181,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
         int foundMarkerID = foundMarkersIDs[i];
         auto findFixedMarkerIndex = std::find(fixedMarkersIDs.begin(), fixedMarkersIDs.end(),
                                               foundMarkerID);
-//        double x, y, theta;
+
         if (findFixedMarkerIndex != fixedMarkersIDs.end()) {
             int fixedMarkerIndex = std::distance(fixedMarkersIDs.begin(), findFixedMarkerIndex);
 
@@ -215,20 +215,6 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
 
             p_for_criticalSectionEnd
 
-
-//            fromRTvectsTo2Dpose(recomputedRvec, recomputedTvec, x, y, theta);
-//            drawObjectPosition(tmpMat, x, y, theta,
-//                               cv::Scalar(100, 0, 0), cv::MarkerTypes::MARKER_TILTED_CROSS, 5,
-//                               10.0, cv::Scalar(100, 100, 100));
-
-//            fromRTvectsTo2Dpose(fixedMarkersRvecs[fixedMarkerIndex],
-//                                fixedMarkersTvecs[fixedMarkerIndex],
-//                                x, y, theta);
-//
-//
-//            drawObjectPosition(tmpMat, x, y, theta,
-//                               cv::Scalar(0, 255, 0), cv::MarkerTypes::MARKER_SQUARE, 5,
-//                               0.0);
         }
     };
 
@@ -238,14 +224,12 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     cv::Vec3d cameraRvec, cameraTvec;
     inliersCount = estimateCameraPose(positionRvecs, positionTvecs,
                                       cameraRvec, cameraTvec,
-                                      positionConfidences //TODO
+                                      positionConfidences
     );
 
-    fromVec3dTojDoubleArray(env, cameraRvec, outRvec);
-    fromVec3dTojDoubleArray(env, cameraTvec, outTvec);
+    fromVec3dToJdoubleArray(env, cameraRvec, outRvec);
+    fromVec3dToJdoubleArray(env, cameraTvec, outTvec);
 
-//    double estimatedX, estimatedY, estimatedTheta;
-//    fromRTvectsTo2Dpose(cameraRvec, cameraTvec, estimatedX, estimatedY, estimatedTheta);
 
     std::ostringstream a;
     a << "INLIERS=" << inliersCount;
@@ -256,8 +240,6 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
                 cv::Scalar(0, 0, 255));
 
 
-//    drawObjectPosition(inputMat, estimatedX, estimatedY, estimatedTheta);
-//    drawCameraRoll(inputMat, cameraRvec[1], 30);
     return inliersCount;
 }
 
@@ -287,8 +269,8 @@ Java_parsleyj_arucoslam_NativeMethods_composeRT(
             rvec,
             tvec
     );
-    fromVec3dTojDoubleArray(env, tvec, out_tvec);
-    fromVec3dTojDoubleArray(env, rvec, out_rvec);
+    fromVec3dToJdoubleArray(env, tvec, out_tvec);
+    fromVec3dToJdoubleArray(env, rvec, out_rvec);
 }
 
 
@@ -312,6 +294,11 @@ double cotan(double i) {
     return 1.0 / tan(i);
 }
 
+constexpr int PHONE_POSE_STATUS_INVALID = -1;
+constexpr int PHONE_POSE_STATUS_UNAVAILABLE = 0;
+constexpr int PHONE_POSE_STATUS_UPDATED = 1;
+constexpr int PHONE_POSE_STATUS_LAST_KNOWN = 2;
+
 extern "C"
 JNIEXPORT void JNICALL
 Java_parsleyj_arucoslam_NativeMethods_renderMap(
@@ -321,6 +308,7 @@ Java_parsleyj_arucoslam_NativeMethods_renderMap(
         jdoubleArray marker_tvects,
         jdoubleArray mapCameraRotation_j,
         jdoubleArray mapCameraTranslation_j,
+        jint phonePoseStatus,
         jdoubleArray phonePositionRvect_j,
         jdoubleArray phonePositionTvect_j,
         jdouble mapCameraFovX,
@@ -333,8 +321,6 @@ Java_parsleyj_arucoslam_NativeMethods_renderMap(
         jint mapTopLeftCornerY,
         jlong result_mat_addr
 ) {
-    //TODO define or obtain map camera
-    //TODO inputs: fovx, fovy, aperturex, aperturey, pixelsx, pixelsy
     double f_x = mapCameraApertureX / 2.0 * cotan(mapCameraFovX / 2.0);
     double f_y = mapCameraApertureY / 2.0 * cotan(mapCameraFovY / 2.0);
     double c_x = static_cast<double>(mapCameraPixelsX) / 2.0;
@@ -345,7 +331,7 @@ Java_parsleyj_arucoslam_NativeMethods_renderMap(
             0.0, f_y, c_y,
             0.0, 0.0, 1.0
     );
-    cv::Mat emptyDistortionCoeffs = cv::Mat::zeros(1,4,CV_64FC1);
+    cv::Mat emptyDistortionCoeffs = cv::Mat::zeros(1, 4, CV_64FC1);
 
     // Transformation to switch from room's coord sys to camera's coord sys
     cv::Vec3d mapCameraRotation, mapCameraTranslation;
@@ -371,13 +357,10 @@ Java_parsleyj_arucoslam_NativeMethods_renderMap(
 
     std::vector<cv::Point3f> origin;
     origin.emplace_back(0.0, 0.0, 0.0);
-    origin.emplace_back(0.1, 0.0, 0.0);
-    origin.emplace_back(0.0, 0.1, 0.0);
-    origin.emplace_back(0.0, 0.0, 0.1);
     std::vector<cv::Point2f> markersImagePoints;
 
     p_for(i, markersRvecs.size()) {
-//         Transformation to switch from marker's coord sys to room's coord sys
+        // Transformation to switch from marker's coord sys to room's coord sys
         cv::Vec3d invertedMarkerRvec, invertedMarkerTvec;
         invertRT(markersRvecs[i], markersTvecs[i],
                  invertedMarkerRvec, invertedMarkerTvec);
@@ -386,12 +369,11 @@ Java_parsleyj_arucoslam_NativeMethods_renderMap(
         cv::Vec3d fromMarkerToMapR, fromMarkerToMapT;
         cv::composeRT(
                 invertedMarkerRvec, invertedMarkerTvec,
-//                markersRvecs[i], markersTvecs[i],
                 mapCameraRotation, mapCameraTranslation,
                 fromMarkerToMapR, fromMarkerToMapT
         );
         std::vector<cv::Point2f> projectedPoints;
-        __android_log_print(ANDROID_LOG_DEBUG, "ABABBABABABBABABABABB", "a");
+
         cv::projectPoints(
                 origin,
                 fromMarkerToMapR,
@@ -400,13 +382,10 @@ Java_parsleyj_arucoslam_NativeMethods_renderMap(
                 emptyDistortionCoeffs,
                 projectedPoints
         );
-        __android_log_print(ANDROID_LOG_DEBUG, "ABABBABABABBABABABABB", "b");
+
 
         p_for_criticalSectionBegin
             markersImagePoints.push_back(projectedPoints[0]);
-            markersImagePoints.push_back(projectedPoints[1]);
-            markersImagePoints.push_back(projectedPoints[2]);
-            markersImagePoints.push_back(projectedPoints[3]);
         p_for_criticalSectionEnd
     };
 
@@ -414,15 +393,151 @@ Java_parsleyj_arucoslam_NativeMethods_renderMap(
     cv::Point2f topLeftCorner = cv::Point2f(mapTopLeftCornerX, mapTopLeftCornerY);
     draw2DBoxFrame(imageMat, topLeftCorner);
 
-    for (auto &markerPoint:markersImagePoints) {
-        cv::drawMarker(imageMat, topLeftCorner + markerPoint,
-                       cv::Scalar(255, 0, 0),
+    if (phonePoseStatus != PHONE_POSE_STATUS_UNAVAILABLE) {
+        double cameraRaysLength = 0.3;
+        double sinOfFourthOfPi = sin(CV_PI / 4.0);
+        double ray = cameraRaysLength * sinOfFourthOfPi;
+
+        std::vector<cv::Point3f> phoneObject3DPoints;
+        phoneObject3DPoints.emplace_back(0, 0, 0);
+        phoneObject3DPoints.emplace_back(0, 0, 0.2);
+        phoneObject3DPoints.emplace_back(-ray, -ray, ray);
+        phoneObject3DPoints.emplace_back(-ray, +ray, ray);
+        phoneObject3DPoints.emplace_back(+ray, +ray, ray);
+        phoneObject3DPoints.emplace_back(+ray, -ray, ray);
+
+        // Transformation to switch from phone's coord sys to room's coord sys
+        cv::Vec3d invertedPhoneRvec, invertedPhoneTvec;
+        invertRT(phonePositionRvect, phonePositionTvect,
+                 invertedPhoneRvec, invertedPhoneTvec);
+
+        // Transformation to switch from phone's coord sys to mapCampera's coord sys
+        cv::Vec3d fromPhoneToMapR, fromPhoneToMapT;
+        cv::composeRT(
+                invertedPhoneRvec, invertedPhoneTvec,
+                mapCameraRotation, mapCameraTranslation,
+                fromPhoneToMapR, fromPhoneToMapT
+        );
+        std::vector<cv::Point2f> projectedPhonePoints;
+        cv::projectPoints(
+                phoneObject3DPoints,
+                fromPhoneToMapR,
+                fromPhoneToMapT,
+                mapCameraMatrix,
+                emptyDistortionCoeffs,
+                projectedPhonePoints
+        );
+
+        cv::Scalar centerColor, arrowColor, raysColor, panelColor;
+        if(phonePoseStatus == PHONE_POSE_STATUS_UPDATED){
+            centerColor = cv::Scalar(0, 255, 0); //green
+            arrowColor = cv::Scalar(255, 255, 255); //white
+            raysColor = cv::Scalar(0, 255, 255); //cyan
+            panelColor = cv::Scalar(0, 0, 255); // blue
+        }else if (phonePoseStatus == PHONE_POSE_STATUS_LAST_KNOWN){
+            //same, but dimmed
+            centerColor = cv::Scalar(0, 127, 0); //green
+            arrowColor = cv::Scalar(127, 127, 127); //white
+            raysColor = cv::Scalar(0, 127, 127); //cyan
+            panelColor = cv::Scalar(0, 0, 127); // blue
+        }else{ // phonePoseStatus == PHONE_POSE_STATUS_INVALID
+            //all red
+            centerColor = arrowColor = raysColor = panelColor =
+                    cv::Scalar(255, 0, 0); //red
+        }
+
+        cv::drawMarker(imageMat, topLeftCorner + projectedPhonePoints[0],
+                       centerColor,
                        cv::MARKER_STAR, 10);
+
+        cv::arrowedLine(imageMat,
+                        topLeftCorner + projectedPhonePoints[0],
+                        topLeftCorner + projectedPhonePoints[1],
+                        arrowColor);
+
+        // drawing 3D phone "cone" rays
+        for (int i = 0; i < 4; i++) {
+            cv::line(imageMat,
+                     topLeftCorner + projectedPhonePoints[0],
+                     topLeftCorner + projectedPhonePoints[2 + i],
+                     raysColor);
+        }
+
+        //drawing 3D phone panel
+        cv::line(imageMat,
+                 topLeftCorner + projectedPhonePoints[2],
+                 topLeftCorner + projectedPhonePoints[3],
+                 panelColor);
+        cv::line(imageMat,
+                 topLeftCorner + projectedPhonePoints[3],
+                 topLeftCorner + projectedPhonePoints[4],
+                 panelColor);
+        cv::line(imageMat,
+                 topLeftCorner + projectedPhonePoints[4],
+                 topLeftCorner + projectedPhonePoints[5],
+                 panelColor);
+        cv::line(imageMat,
+                 topLeftCorner + projectedPhonePoints[5],
+                 topLeftCorner + projectedPhonePoints[2],
+                 panelColor);
+        cv::line(imageMat,
+                 topLeftCorner + projectedPhonePoints[2],
+                 topLeftCorner + projectedPhonePoints[4],
+                 panelColor);
+        cv::line(imageMat,
+                 topLeftCorner + projectedPhonePoints[3],
+                 topLeftCorner + projectedPhonePoints[5],
+                 panelColor);
     }
 
-    cv::line(imageMat, topLeftCorner + markersImagePoints[0], topLeftCorner + markersImagePoints[1], cv::Scalar(0, 0, 255), 3);
-    cv::line(imageMat, topLeftCorner + markersImagePoints[0], topLeftCorner + markersImagePoints[2], cv::Scalar(0, 255, 0), 3);
-    cv::line(imageMat, topLeftCorner + markersImagePoints[0], topLeftCorner + markersImagePoints[3], cv::Scalar(255, 0, 0), 3);
+
+    for (auto &markerPoint:markersImagePoints) {
+        cv::drawMarker(imageMat, topLeftCorner + markerPoint,
+                       cv::Scalar(0, 255, 0),
+                       cv::MARKER_SQUARE, 10);
+    }
 
 
+}
+
+
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_parsleyj_arucoslam_NativeMethods_poseCentroid(
+        JNIEnv *env,
+        jclass clazz,
+        jdoubleArray inRvecs_j,
+        jdoubleArray inTvecs_j,
+        jdoubleArray weights, //TODO
+        jint offset,
+        jint count,
+        jdoubleArray outRvec_j,
+        jdoubleArray outTvec_j
+) {
+    std::vector<cv::Vec3d> inRvecs, inTvecs;
+    pushjDoubleArrayToVectorOfVec3ds(
+            env,
+            inRvecs_j,
+            inRvecs,
+            offset,
+            count
+    );
+
+    pushjDoubleArrayToVectorOfVec3ds(
+            env,
+            inTvecs_j,
+            inTvecs,
+            offset,
+            count
+    );
+
+
+    //TODO weights
+    cv::Vec3d outTvec, outRvec;
+    computeCentroid(inTvecs, outTvec);
+    computeAngleCentroid(inRvecs, outRvec);
+
+    fromVec3dToJdoubleArray(env, outRvec, outRvec_j);
+    fromVec3dToJdoubleArray(env, outTvec, outTvec_j);
 }

@@ -5,24 +5,28 @@ import org.opencv.core.Mat
 import org.opencv.core.Size
 import parsleyj.arucoslam.*
 import parsleyj.arucoslam.datamodel.CalibData
+import parsleyj.arucoslam.datamodel.Pose3d
+import parsleyj.arucoslam.datamodel.Track
 import parsleyj.arucoslam.datamodel.Vec3d
+import parsleyj.arucoslam.datamodel.slamspace.SLAMMarker
 import parsleyj.arucoslam.datamodel.slamspace.SLAMSpace
 import parsleyj.arucoslam.pipeline.WorkerPool
 import kotlin.math.PI
 
 
-val mapCameraRotation = Vec3d(-PI / 2.0, 0.0, 0.0).asDoubleArray()
-val mapCameraTranslation = Vec3d(0.0, -1.0, 10.0).asDoubleArray()
-
 class SLAMFramePipeline(
     private val maxMarkersPerFrame: Int, // how many markers are considered by the detector at each frame
     calibDataSupplier: () -> CalibData,
     private val markerSpace: SLAMSpace,
+    private val track: Track,
+    private val poseValidityConstraints: PoseValidityConstraints,
     private val frameSize: Size,
     private val frameType: Int,
     private val maxWorkers: Int,
     coroutineScope: CoroutineScope = defaultDispatcher,
     private val jobTimeout: Long = 1000L,
+    var mapCameraRotation: Vec3d = Vec3d(-PI / 2.0, 0.0, 0.0),
+    var mapCameraTranslation: Vec3d = Vec3d(0.0, -1.0, 10.0),
 ) : WorkerPool<Mat, Mat, FrameRecyclableData>(
     maxWorkers,
     { Mat.zeros(frameSize, frameType) },
@@ -31,12 +35,18 @@ class SLAMFramePipeline(
         FrameRecyclableData(
             foundIDs = IntArray(maxMarkersPerFrame) { 0 },
             foundRVecs = DoubleArray(maxMarkersPerFrame * 3) { 0.0 },
-            foundTVecs = DoubleArray(maxMarkersPerFrame * 3) { 0.0 }
+            foundTVecs = DoubleArray(maxMarkersPerFrame * 3) { 0.0 },
+            estimatedPhonePosition = Pose3d(
+                Vec3d(0.0, 0.0, 0.0),
+                Vec3d(0.0, 0.0, 0.0)
+            )
         )
     },
     coroutineScope,
     jobTimeout,
-    block = { inMat, outMat, (foundIDs, foundRvecs, foundTvecs) ->
+    block = { inMat, outMat, (foundIDs, foundRvecs, foundTvecs, estimatedPose) ->
+        val currentTimestamp = System.currentTimeMillis()
+        val (estimatedPositionRVec, estimatedPositionTVec) = estimatedPose.asPairOfVec3d()
 
         // find all the markers in the image and estimate their poses w.r.t. camera
         val foundMarkersCount = NativeMethods.detectMarkers(
@@ -51,7 +61,7 @@ class SLAMFramePipeline(
             foundTvecs
         )
 
-        // get the known markers as arrays
+        // get the known markers as arrays (no copy is done here)
         val (
             fixedMarkerIds,
             fixedMarkerRvects,
@@ -60,11 +70,15 @@ class SLAMFramePipeline(
             fixedMarkerCount,
         ) = markerSpace.asArrays()
 
+        val newPhonePoseAvailable: Boolean
+        val validNewPhonePoseAvailable: Boolean
+        val lastPoseWithTimestamp: Pair<Pose3d, Long>? = track.lastPose()
+        val lastPoseAvailable = lastPoseWithTimestamp != null
+        val renderedPose: Pose3d?
 
+        // if markers are found
         if (foundMarkersCount > 0) {
-            val estimatedPositionRVec = DoubleArray(3) { 0.0 }
-            val estimatedPositionTVec = DoubleArray(3) { 0.0 }
-
+            // attempt to estimate a new phone pose
             val inliersCount = NativeMethods.estimateCameraPosition(
                 calibDataSupplier().cameraMatrix.nativeObjAddr, //in
                 calibDataSupplier().distCoeffs.nativeObjAddr, //in
@@ -79,21 +93,86 @@ class SLAMFramePipeline(
                 foundIDs, //in
                 foundRvecs, //in
                 foundTvecs, //in
-                estimatedPositionRVec, //out
-                estimatedPositionTVec //out
+                estimatedPositionRVec.asDoubleArray(), //out
+                estimatedPositionTVec.asDoubleArray(), //out
             )
+
+            newPhonePoseAvailable = true
+
+            var knownMarkersFoundCount = 0
+            for(i in 0 until foundMarkersCount){
+                if(foundIDs[i] in fixedMarkerIds){
+                    knownMarkersFoundCount++
+                }
+            }
+
+            // evaluate the validity of the estimate;
+            // if the estimated pose is valid
+            validNewPhonePoseAvailable = poseValidityConstraints.estimatedPoseIsValid(
+                estimatedPose,
+                track,
+                knownMarkersFoundCount,
+                inliersCount
+            )
+
+        } else {
+            newPhonePoseAvailable = false
+            validNewPhonePoseAvailable = false
+        }
+
+        if(validNewPhonePoseAvailable){
+            // update the track
+            track.addPose(estimatedPose, currentTimestamp)
+
+            // update new markers found
+            for(i in 0 until foundMarkersCount){
+                if(foundIDs[i] !in fixedMarkerIds){
+                    markerSpace.addIfNotPresent(
+                        SLAMMarker(
+                            foundIDs[i],
+                            Pose3d(
+                                Vec3d(
+                                    foundRvecs[i*3],
+                                    foundRvecs[i*3+1],
+                                    foundRvecs[i*3+2],
+                                ),
+                                Vec3d(
+                                    foundTvecs[i*3],
+                                    foundTvecs[i*3+1],
+                                    foundTvecs[i*3+2],
+                                )
+                            ),
+                            1.0 //TODO confidence
+                        )
+                    )
+                }
+            }
         }
 
         val mapSizeInPixels = inMat.rows() / 2
+
+        val phonePoseStatus = when {
+            // found a new pose estimate, but it's invalid
+            newPhonePoseAvailable &&
+                    !validNewPhonePoseAvailable -> NativeMethods.PHONE_POSE_STATUS_INVALID
+            // found a new pose estimate and it's valid
+            validNewPhonePoseAvailable -> NativeMethods.PHONE_POSE_STATUS_UPDATED
+            // not found a new pose estimate, however the last pose is known
+            lastPoseAvailable -> NativeMethods.PHONE_POSE_STATUS_LAST_KNOWN
+            // no pose found yet
+            else -> NativeMethods.PHONE_POSE_STATUS_UNAVAILABLE
+        }
+
         NativeMethods.renderMap(
             fixedMarkerRvects,
             fixedMarkerTvects,
-            mapCameraRotation,
-            mapCameraTranslation,
-            Vec3d.ORIGIN.asDoubleArray(),
-            Vec3d.ORIGIN.asDoubleArray(),
-            PI/2.0,
-            PI/2.0,
+            mapCameraRotation.asDoubleArray(),
+            mapCameraTranslation.asDoubleArray(),
+            phonePoseStatus,
+            estimatedPositionRVec.asDoubleArray(),
+            estimatedPositionTVec.asDoubleArray(),
+            PI / 2.0,
+            PI / 2.0,
             2400.0,
             2400.0,
             mapSizeInPixels,
@@ -105,3 +184,4 @@ class SLAMFramePipeline(
     },
     onCannotProcess = { _, input -> input }
 )
+
