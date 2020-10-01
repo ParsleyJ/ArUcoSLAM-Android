@@ -5,8 +5,9 @@ import parsleyj.arucoslam.datamodel.Track
 import kotlin.math.abs
 
 class PoseValidityConstraints(
+    val minimumInliersRatio: Double,
     val maxSpeed: Double, // in meters per second
-//    val maxAngularSpeed: Double, // in radians per second
+    val maxAngularSpeed: Double, // in radians per second
 ) {
 
 
@@ -18,7 +19,13 @@ class PoseValidityConstraints(
         detectedKnownMarkersCount: Int,
         inliersCount: Int,
     ): Boolean {
-        //todo frame quality constraints
+        if(detectedKnownMarkersCount <= 0){
+            return false
+        }
+
+        if(inliersCount.toDouble() / detectedKnownMarkersCount.toDouble() < minimumInliersRatio){
+            return false
+        }
 
         val lastPoseWithTimestamp = track.lastPose()
 
@@ -26,19 +33,22 @@ class PoseValidityConstraints(
             val (lastPose, lastPoseTimestamp) = lastPoseWithTimestamp
             val timeElapsed =
                 (currentPoseTimestamp - lastPoseTimestamp).toDouble() / 1000.0 //in seconds
-            val distance = (
-                    currentPoseEstimate.invert().translationVector
-                            - lastPose.invert().translationVector).euclideanNorm()
+            val inverseCurrentPose = currentPoseEstimate.invert()
+            val inverseLastPose = lastPose.invert()
+            val distance = (inverseCurrentPose.translationVector
+                            - inverseLastPose.translationVector).euclideanNorm()
             val translationSpeed = abs(distance / timeElapsed)
             if (translationSpeed > maxSpeed) {
                 return false
             }
 
-            //todo compute angular distance? (???)
+            val angularDistance = inverseCurrentPose.rotationVector
+                .angularDistance(inverseLastPose.rotationVector)
 
-            //todo compute angular speed? (???)
-
-            //todo check on angular speed? (???)
+            val rotationSpeed = abs(angularDistance / timeElapsed)
+            if(rotationSpeed > maxAngularSpeed){
+                return false
+            }
         }
 
         return true

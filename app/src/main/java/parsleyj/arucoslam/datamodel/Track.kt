@@ -9,10 +9,6 @@ class Track(
     val recentPosesMaxSize: Int,
 ) {
 
-    companion object {
-        private val emptyArray = DoubleArray(0)
-    }
-
 
     val recentPosesRvecs: DoubleArray = DoubleArray(recentPosesMaxSize * 3)
     val recentPosesTvecs: DoubleArray = DoubleArray(recentPosesMaxSize * 3)
@@ -104,7 +100,6 @@ class Track(
                 NativeMethods.poseCentroid(
                     recentPosesRvecs,
                     recentPosesTvecs,
-                    emptyArray, //TODO
                     0,
                     recentPosesSize,
                     centroidRvect,

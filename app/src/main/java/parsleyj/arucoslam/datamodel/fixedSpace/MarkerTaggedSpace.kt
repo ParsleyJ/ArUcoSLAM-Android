@@ -153,7 +153,7 @@ class MarkerTaggedSpace(
             } else {
                 commonLength
             },
-            markers.map{ SLAMMarker(it.markerId, it.pose3d, 1.0) }
+            markers.map{ SLAMMarker(it.markerId, it.pose3d) }
         )
     }
 }

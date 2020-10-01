@@ -6,11 +6,10 @@ import parsleyj.arucoslam.datamodel.Vec3d
 data class SLAMMarker(
     val markerId: Int,
     val pose3d: Pose3d,
-    val markerConfidence: Double
 ) {
 
     infix fun moveTo(pose: Pose3d): SLAMMarker {
-        return SLAMMarker(markerId, pose3d * pose, markerConfidence)
+        return SLAMMarker(markerId, pose3d * pose)
     }
 
     infix fun translateTo(translation: Vec3d):SLAMMarker {

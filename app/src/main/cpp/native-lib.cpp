@@ -101,7 +101,6 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
         jintArray fixed_markers,
         jdoubleArray fixed_rvects,
         jdoubleArray fixed_tvects,
-        jdoubleArray fixedMarkerConfidences,
         jdouble fixedLenght,
         jint foundPosesCount,
         jintArray inMarkers,
@@ -142,15 +141,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
             0,
             fixedMarkerCount);
 
-    std::unordered_map<int, double> markerConfidenceMap;
-    populateMapFromJavaArrays<jintArray, jdoubleArray, int, double>(
-            env,
-            fixed_markers,
-            fixedMarkerConfidences,
-            &JNIEnv::GetIntArrayElements,
-            &JNIEnv::GetDoubleArrayElements,
-            markerConfidenceMap
-    );
+
 
     std::vector<int> foundMarkersIDs;
     std::vector<cv::Vec3d> foundMarkersTvecs;
@@ -169,7 +160,6 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
 
     std::vector<cv::Vec3d> positionRvecs;
     std::vector<cv::Vec3d> positionTvecs;
-    std::vector<double> positionConfidences;
     cv::Mat tmpMat;
     cv::cvtColor(inputMat, tmpMat, CV_RGBA2RGB);
 
@@ -198,21 +188,13 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
                     recomputedRvec, recomputedTvec
             );
 
-            double markerConfidence = 0.0;
-            if (markerConfidenceMap.find(fixedMarkersIDs[fixedMarkerIndex]) !=
-                markerConfidenceMap.end()) {
-                markerConfidence = markerConfidenceMap[fixedMarkersIDs[fixedMarkerIndex]];
-            }
 
             cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs,
                                 recomputedRvec, recomputedTvec, (float) fixedLenght);
 
             p_for_criticalSectionBegin
-
                 positionTvecs.push_back(recomputedTvec);
                 positionRvecs.push_back(recomputedRvec);
-                positionConfidences.push_back(markerConfidence);
-
             p_for_criticalSectionEnd
 
         }
@@ -223,8 +205,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     int inliersCount;
     cv::Vec3d cameraRvec, cameraTvec;
     inliersCount = estimateCameraPose(positionRvecs, positionTvecs,
-                                      cameraRvec, cameraTvec,
-                                      positionConfidences
+                                      cameraRvec, cameraTvec
     );
 
     fromVec3dToJdoubleArray(env, cameraRvec, outRvec);
@@ -569,7 +550,6 @@ Java_parsleyj_arucoslam_NativeMethods_poseCentroid(
         jclass clazz,
         jdoubleArray inRvecs_j,
         jdoubleArray inTvecs_j,
-        jdoubleArray weights, //TODO
         jint offset,
         jint count,
         jdoubleArray outRvec_j,
@@ -592,11 +572,23 @@ Java_parsleyj_arucoslam_NativeMethods_poseCentroid(
             count
     );
 
-    //TODO weights
     cv::Vec3d outTvec, outRvec;
     computeCentroid(inTvecs, outTvec);
     computeAngleCentroid(inRvecs, outRvec);
 
     fromVec3dToJdoubleArray(env, outRvec, outRvec_j);
     fromVec3dToJdoubleArray(env, outTvec, outTvec_j);
+}
+
+extern "C"
+JNIEXPORT jdouble JNICALL
+Java_parsleyj_arucoslam_NativeMethods_angularDistance(
+        JNIEnv *env,
+        jclass clazz,
+        jdoubleArray inRvec1_j,
+        jdoubleArray inRvec2_j) {
+    cv::Vec3d inRvec1, inRvec2;
+    fromjDoubleArrayToVec3d(env, inRvec1_j, inRvec1);
+    fromjDoubleArrayToVec3d(env, inRvec2_j, inRvec2);
+    return eulerAnglesAngularDistance(inRvec1, inRvec2);
 }

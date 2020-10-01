@@ -1,5 +1,6 @@
 package parsleyj.arucoslam.framepipeline
 
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import org.opencv.core.Mat
 import org.opencv.core.Size
@@ -66,7 +67,7 @@ class SLAMFramePipeline(
             fixedMarkerIds,
             fixedMarkerRvects,
             fixedMarkerTvects,
-            fixedMarkerConfidences,
+
             fixedMarkerCount,
         ) = markerSpace.asArrays()
 
@@ -87,7 +88,6 @@ class SLAMFramePipeline(
                 fixedMarkerIds, //in
                 fixedMarkerRvects, //in
                 fixedMarkerTvects, //in
-                fixedMarkerConfidences, //in
                 markerSpace.commonLength, //in
                 foundMarkersCount, //in
                 foundIDs, //in
@@ -122,6 +122,8 @@ class SLAMFramePipeline(
         }
 
         if(validNewPhonePoseAvailable){
+            Log.d("SLAMFramePipeline", "pose estimate: $estimatedPose")
+
             // update the track
             track.addPose(estimatedPose, currentTimestamp)
 
@@ -142,8 +144,7 @@ class SLAMFramePipeline(
                                     foundTvecs[i*3+1],
                                     foundTvecs[i*3+2],
                                 )
-                            ).invert(), //TODO invert in place
-                            1.0 //TODO confidence
+                            ).invertInPlace(),
                         )
                     )
                 }

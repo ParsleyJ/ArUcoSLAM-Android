@@ -23,7 +23,6 @@ double meanAngle(const ITERABLE &c, const std::vector<double>& weights = std::ve
     auto it = std::begin(c);
     auto end = std::end(c);
 
-
     double x = 0.0;
     double y = 0.0;
     int i = 0;
@@ -42,26 +41,20 @@ void computeAngleCentroid(
         cv::Vec3d &angleCentroid,
         std::vector<double> weights = std::vector<double>()
 ) {
-    __android_log_print(ANDROID_LOG_DEBUG, "BBBBBBBBBBBBBBBBBBBBBBBBBB", "started");
     std::vector<double> tmp;
     tmp.reserve(rvecs.size());
 
 
     for (int j = 0; j < 3; j++) {
-        __android_log_print(ANDROID_LOG_DEBUG, "BBBBBBBBBBBBBBBBBBBBBBBBBB", "for1 %d", j);
         double weightSum = 0.0;
         for (int i = 0; i < rvecs.size(); i++) {
             double weight = getWeight(i, weights);
             weightSum += weight;
             tmp.push_back(rvecs[i][j] * weight);
         }
-        __android_log_print(ANDROID_LOG_DEBUG, "BBBBBBBBBBBBBBBBBBBBBBBBBB", "for2 %d", j);
         angleCentroid[j] = meanAngle(tmp);
-        __android_log_print(ANDROID_LOG_DEBUG, "BBBBBBBBBBBBBBBBBBBBBBBBBB", "for3 %d", j);
         tmp.clear();
     }
-    __android_log_print(ANDROID_LOG_DEBUG, "BBBBBBBBBBBBBBBBBBBBBBBBBB", "end");
-
 }
 
 
@@ -91,18 +84,16 @@ void vectorRansac(
         cv::Vec3d &foundModel,
         double inlierThreshold,
         double outlierProbability,
+        double targetOptimalModelProbability,
         uint maxN,
         int &inliers,
-        const std::vector<double> &weights
-        = std::vector<double>(),
         const std::function<double(const cv::Vec3d &, const cv::Vec3d &)> &distanceFunction
         = [](const cv::Vec3d &v1, const cv::Vec3d &v2) { return cv::norm(v1 - v2); },
         const std::function<void(const std::vector<cv::Vec3d> &,
                                  cv::Vec3d &, const std::vector<double> &)> &centroidComputer
-        = &computeCentroid
+        = &computeCentroid,
+        const std::vector<double> &weights = std::vector<double>()
 ) {
-
-
     if (vecs.empty()) {
         inliers = 0;
         return;
@@ -115,6 +106,7 @@ void vectorRansac(
     if (vecs.size() == 2) {
         inliers = 2;
         computeCentroid(vecs, foundModel, weights);
+        return;
     }
     size_t subSetSize;
     if (vecs.size() <= 10) {
@@ -124,9 +116,9 @@ void vectorRansac(
     }
 
     // target probability to get a subset which generates a model without outliers
-    double prob = 0.9;
 
-    uint attempts = log(1.0 - prob) / log(1.0 - pow(1.0 - outlierProbability, double(subSetSize)));
+
+    uint attempts = log(1.0 - targetOptimalModelProbability) / log(1.0 - pow(1.0 - outlierProbability, double(subSetSize)));
     if (attempts == 0) {
         attempts = 1;
     }
@@ -179,42 +171,47 @@ void vectorRansac(
     centroidComputer(bestInliers, foundModel, bestWeigths);
 }
 
+double eulerAnglesAngularDistance(const cv::Vec3d &p1, const cv::Vec3d &p2){
+    return cv::norm(cv::Vec3d(
+            atan2(sin(p1[0] - p2[0]), cos(p1[0] - p2[0])),
+            atan2(sin(p1[1] - p2[1]), cos(p1[1] - p2[1])),
+            atan2(sin(p1[2] - p2[2]), cos(p1[2] - p2[2]))
+    ));
+}
 
 int estimateCameraPose(
         const std::vector<cv::Vec3d> &rvecs,
         const std::vector<cv::Vec3d> &tvecs,
         cv::Vec3d &modelRvec,
         cv::Vec3d &modelTvec,
-        const std::vector<double> &confidences = std::vector<double>()
+        double tvecInlierTreshold = 0.05,
+        double tvecOutlierProbability = 0.1,
+        double rvecInlierTreshold = M_PI / 8.0,
+        double rvecOutlierProbability = 0.1,
+        uint maxRansacIterations = 100,
+        double optimalModelTargetProbability = 0.9
 ) {
     int inliers = -1;
 
     vectorRansac(
             tvecs,
             modelTvec,
-            0.05,
-            0.1,
-            100,
-            inliers,
-            confidences
+            tvecInlierTreshold,
+            tvecOutlierProbability,
+            optimalModelTargetProbability,
+            maxRansacIterations,
+            inliers
     );
 
-    constexpr double angleInlierThreshold = M_PI / 8.0;
     vectorRansac(
             rvecs,
             modelRvec,
-            angleInlierThreshold,
-            0.1,
-            100,
+            rvecInlierTreshold,
+            rvecOutlierProbability,
+            optimalModelTargetProbability,
+            maxRansacIterations,
             inliers,
-            confidences,
-            [&](const cv::Vec3d &p1, const cv::Vec3d &p2) {
-                return cv::norm(cv::Vec3d(
-                        atan2(sin(p1[0] - p2[0]), cos(p1[0] - p2[0])),
-                        atan2(sin(p1[1] - p2[1]), cos(p1[1] - p2[1])),
-                        atan2(sin(p1[2] - p2[2]), cos(p1[2] - p2[2]))
-                ));
-            },
+            &eulerAnglesAngularDistance,
             &computeAngleCentroid
     );
 

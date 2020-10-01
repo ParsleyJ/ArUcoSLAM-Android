@@ -14,7 +14,6 @@ class SLAMSpace(
     val markerIDs: MonotonicIntList,
     val markerRVects: MonotonicDoubleList,
     val markerTVects: MonotonicDoubleList,
-    val markerConfidences: MonotonicDoubleList,
     val commonLength: Double,
 ) : Iterable<SLAMMarker> {
     private val markerIdToIndexMap = mutableMapOf<Int, Int>()
@@ -35,7 +34,6 @@ class SLAMSpace(
         MonotonicIntList(markers.map { it.markerId }),
         MonotonicDoubleList(markers.map { it.pose3d.rotationVector }.flattenVecs()),
         MonotonicDoubleList(markers.map { it.pose3d.translationVector }.flattenVecs()),
-        MonotonicDoubleList(markers.map { it.markerConfidence }),
         commonLength,
     )
 
@@ -62,7 +60,6 @@ class SLAMSpace(
                         markerTVects[index * 3 + 2],
                     )
                 ),
-                markerConfidences[index]
             )
         } else null
     }
@@ -83,7 +80,6 @@ class SLAMSpace(
             markerIDs.add(marker.markerId)
             markerRVects.addFromArray(marker.pose3d.rotationVector.asDoubleArray())
             markerTVects.addFromArray(marker.pose3d.translationVector.asDoubleArray())
-            markerConfidences.add(marker.markerConfidence)
 
             markerIdToIndexMap[marker.markerId] = newIndex
             true
@@ -102,16 +98,13 @@ class SLAMSpace(
             rvects, 0, min(markerRVects.size, rvects.size))
         System.arraycopy(markerTVects.elementData, 0,
             tvects, 0, min(markerTVects.size, tvects.size))
-        System.arraycopy(markerConfidences.elementData, 0,
-            confidences, 0, min(markerConfidences.size, confidences.size))
     }
 
-    fun asArrays(): Tuple5<IntArray, DoubleArray, DoubleArray, DoubleArray, Int> = synchronized(this) {
+    fun asArrays(): Tuple4<IntArray, DoubleArray, DoubleArray, Int> = synchronized(this) {
         return tuple(
             this.markerIDs.elementData,
             this.markerRVects.elementData,
             this.markerTVects.elementData,
-            this.markerConfidences.elementData,
             this.size,
         )
     }

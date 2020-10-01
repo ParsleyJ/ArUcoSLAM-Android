@@ -1,5 +1,6 @@
 package parsleyj.arucoslam.datamodel
 
+import parsleyj.arucoslam.NativeMethods
 import kotlin.math.sqrt
 
 inline class Vec3d(private val d: DoubleArray) {
@@ -43,4 +44,12 @@ inline class Vec3d(private val d: DoubleArray) {
     }
 
     fun euclideanNorm() = sqrt(x * x + y * y + z * z)
+
+    fun angularDistance(other: Vec3d): Double {
+        return NativeMethods.angularDistance(this.asDoubleArray(), other.asDoubleArray())
+    }
+
+    override fun toString() = """
+        Vec3d($x, $y, $z)
+    """.trimIndent()
 }

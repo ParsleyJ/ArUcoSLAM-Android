@@ -24,7 +24,6 @@ public class NativeMethods {
             int[] fixedMarkers,
             double[] fixedRVects,
             double[] fixedTVects,
-            double[] fixedMarkerConfidences,
             double fixedLength,
 
             int foundPoses,
@@ -51,10 +50,14 @@ public class NativeMethods {
             double[] outTvec
     );
 
+    public static native double angularDistance(
+            double[] inRvec1,
+            double[] inRvec2
+    );
+
     public static native void poseCentroid(
             double[] inRvecs,
             double[] inTvecs,
-            double[] weights,
             int offset,
             int count,
             double[] outRvec,
@@ -67,8 +70,8 @@ public class NativeMethods {
     public static final int PHONE_POSE_STATUS_LAST_KNOWN = 2;
 
     public static native void renderMap(
-            double[] fixedRVects,
-            double[] fixedTVects,
+            double[] markerRVects,
+            double[] markerTVects,
             double[] mapCameraPoseRotation,
             double[] mapCameraPoseTranslation,
             double mapCameraFovX,
@@ -85,7 +88,6 @@ public class NativeMethods {
             int mapCameraPixelsY,
             int mapTopLeftCornerX,
             int mapTopLeftCornerY,
-            //TODO track
             long resultMatAddr
     );
 

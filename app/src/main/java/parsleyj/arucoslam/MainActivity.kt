@@ -21,6 +21,7 @@ import parsleyj.arucoslam.datamodel.fixedSpace.MarkerTaggedSpace
 import parsleyj.arucoslam.framepipeline.PoseValidityConstraints
 import parsleyj.arucoslam.framepipeline.SLAMFramePipeline
 import parsleyj.kotutils.joinWithSeparator
+import kotlin.math.PI
 
 
 class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraViewListener2 {
@@ -56,7 +57,9 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
 
     private val poseValidityConstraints by lazy {
         PoseValidityConstraints(
-            0.8 // not expected to exceed 0.8 meters per second when detecting a new pose
+            0.5, // a pose estimate obtained with RANSAC should have at least 50% of inliers
+            0.8, // not expected to exceed 0.8 meters per second when detecting a new pose
+            2.0*PI/3.0 // not expected to exceed 120 degrees per second of rotation
         )
     }
 
@@ -130,12 +133,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     }
 
 
-    private var frameCounter = 0L
-
-    private fun countFrame(): Long {
-        return frameCounter++
-    }
-
+    
 
     override fun onCameraFrame(inputFrame: FixedCameraBridgeViewBase.CvCameraViewFrame?): Mat? {
         if (inputFrame != null) {

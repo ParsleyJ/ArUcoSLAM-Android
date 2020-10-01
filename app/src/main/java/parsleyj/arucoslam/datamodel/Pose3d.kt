@@ -59,7 +59,29 @@ inline class Pose3d(private val pair: Pair<Vec3d, Vec3d>) {
         return result
     }
 
+    /**
+     * Inverts the RT trasformation associated with this pose by not allocating any support
+     * structures in the heap, and by directly changing the data in this pose.
+     * The returned value is simply a reference to this pose.
+     */
+    fun invertInPlace():Pose3d{
+        NativeMethods.invertRT(
+            rotationVector.asDoubleArray(),
+            translationVector.asDoubleArray(),
+            rotationVector.asDoubleArray(),
+            translationVector.asDoubleArray(),
+        )
+        return this
+    }
+
     companion object {
         val ORIGIN = Pose3d(Vec3d.ORIGIN, Vec3d.ORIGIN)
     }
+
+    override fun toString() = """
+        Pose3d{
+            rvec=$rotationVector; 
+            tvec=$translationVector
+        }
+    """.trimIndent()
 }
