@@ -4,6 +4,7 @@ public class NativeMethods {
 
 
     public static native int detectMarkers(
+            //TODO marker dictionary
             long cameraMatrixAddr,
             long distCoeffsAddr,
             long inputMatAddr,
@@ -70,8 +71,10 @@ public class NativeMethods {
     public static final int PHONE_POSE_STATUS_LAST_KNOWN = 2;
 
     public static native void renderMap(
+            double markerLength,
             double[] markerRVects,
             double[] markerTVects,
+            int fixedMarkerCount,
             double[] mapCameraPoseRotation,
             double[] mapCameraPoseTranslation,
             double mapCameraFovX,
@@ -88,7 +91,8 @@ public class NativeMethods {
             int mapCameraPixelsY,
             int mapTopLeftCornerX,
             int mapTopLeftCornerY,
-            long resultMatAddr
+            long resultMatAddr,
+            boolean fullScreenMode
     );
 
 }

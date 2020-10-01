@@ -49,6 +49,12 @@ inline class Vec3d(private val d: DoubleArray) {
         return NativeMethods.angularDistance(this.asDoubleArray(), other.asDoubleArray())
     }
 
+    fun copyTo(other: Vec3d){
+        other.x = this.x
+        other.y = this.y
+        other.z = this.z
+    }
+
     override fun toString() = """
         Vec3d($x, $y, $z)
     """.trimIndent()

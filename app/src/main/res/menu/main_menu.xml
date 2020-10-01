@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_drop_last_marker"
+        android:icon="@drawable/ic_repeat_white_24dp"
+        app:showAsAction="always"
+        android:title="Drop Last Marker">
+    </item>
 <!--    <item-->
 <!--        android:id="@+id/action_start_calibration"-->
 <!--        android:icon="@drawable/ic_radio_button_checked_white_24dp"-->

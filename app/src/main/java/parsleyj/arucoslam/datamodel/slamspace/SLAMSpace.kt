@@ -16,13 +16,7 @@ class SLAMSpace(
     val markerTVects: MonotonicDoubleList,
     val commonLength: Double,
 ) : Iterable<SLAMMarker> {
-    private val markerIdToIndexMap = mutableMapOf<Int, Int>()
 
-    init {
-        for ((index, id) in markerIDs.withIndex()) {
-            markerIdToIndexMap[id] = index
-        }
-    }
 
 
     constructor(
@@ -38,14 +32,11 @@ class SLAMSpace(
     )
 
     val size:Int
-        get() = markerIdToIndexMap.size
+        get() = synchronized(this){ markerIDs.size }
 
-    fun getById(id: Int) = markerIdToIndexMap[id]?.let { getByIndex(it) }
-
-    operator fun get(id: Int) = getById(id)
 
     fun getByIndex(index: Int): SLAMMarker? = synchronized(this) {
-        return if (index in 0 until markerIDs.size) {
+        return if (index in 0 until size) {
             SLAMMarker(
                 markerIDs[index],
                 Pose3d(
@@ -65,7 +56,7 @@ class SLAMSpace(
     }
 
     override fun iterator(): Iterator<SLAMMarker> {
-        return (0 until synchronized(this@SLAMSpace){markerIDs.size}).itMap { index ->
+        return (0 until size).itMap { index ->
             synchronized(this@SLAMSpace) {
                 getByIndex(index)!!
             }
@@ -73,15 +64,12 @@ class SLAMSpace(
     }
 
     fun addIfNotPresent(marker: SLAMMarker): Boolean = synchronized(this) {
-        return if (marker.markerId in markerIdToIndexMap) {
+        return if (marker.markerId in markerIDs) {
             false
         } else {
-            val newIndex = markerIDs.size
             markerIDs.add(marker.markerId)
             markerRVects.addFromArray(marker.pose3d.rotationVector.asDoubleArray())
             markerTVects.addFromArray(marker.pose3d.translationVector.asDoubleArray())
-
-            markerIdToIndexMap[marker.markerId] = newIndex
             true
         }
     }
@@ -90,23 +78,28 @@ class SLAMSpace(
         idsArr: IntArray,
         rvects: DoubleArray,
         tvects: DoubleArray,
-        confidences: DoubleArray,
     ) = synchronized(this) {
         System.arraycopy(markerIDs.elementData, 0,
-            idsArr, 0, min(markerIDs.size, idsArr.size))
+            idsArr, 0, min(size, idsArr.size))
         System.arraycopy(markerRVects.elementData, 0,
-            rvects, 0, min(markerRVects.size, rvects.size))
+            rvects, 0, min(size, rvects.size))
         System.arraycopy(markerTVects.elementData, 0,
-            tvects, 0, min(markerTVects.size, tvects.size))
+            tvects, 0, min(size, tvects.size))
     }
 
-    fun asArrays(): Tuple4<IntArray, DoubleArray, DoubleArray, Int> = synchronized(this) {
-        return tuple(
+    fun asArrays():Tuple4<IntArray, DoubleArray, DoubleArray, Int> = synchronized(this) {
+        return@synchronized tuple(
             this.markerIDs.elementData,
             this.markerRVects.elementData,
             this.markerTVects.elementData,
             this.size,
         )
+    }
+
+    fun removeLastMarker(){
+        this.markerIDs.removeLast()
+        this.markerRVects.removeLast()
+        this.markerTVects.removeLast()
     }
 
 }

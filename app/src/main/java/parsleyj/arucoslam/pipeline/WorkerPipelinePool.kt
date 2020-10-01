@@ -14,7 +14,7 @@ open class WorkerPipelinePool<InputT, OutputT, SupportDataT>(
     private val coroutineScope: CoroutineScope = mainDispatcher,
     private val jobTimeout: Long = 1000L,
     private val onCannotProcess: (OutputT, InputT) -> OutputT = { _, _ -> supplyEmptyOutput() },
-    private val block: suspend (InputT, OutputT, SupportDataT) -> Unit,
+    private val block: suspend (InputT, OutputT, SupportDataT, Long, Long) -> Unit,
 ) {
     private var lastResult = supplyEmptyOutput()
     private var lastResultToken = -1L

@@ -12,7 +12,7 @@ package parsleyj.arucoslam.datamodel
  * in this regard, please be careful by optimizing using [addFromArray] and [addAll] when adding
  * multiple elements.
  */
-class MonotonicIntList(size: Int, init: (Int) -> Int) : List<Int> {
+class MonotonicIntList(initialSize: Int, init: (Int) -> Int) : List<Int> {
     companion object {
         const val DEFAULT_CAPACITY = 10
         private const val MAX_ARRAY_SIZE = Int.MAX_VALUE - 8
@@ -26,11 +26,12 @@ class MonotonicIntList(size: Int, init: (Int) -> Int) : List<Int> {
 
     constructor(collection: List<Int>) : this(collection.size, collection::get)
 
-    var elementData = IntArray(size, init)
+    override var size = initialSize
         private set
 
-    override val size: Int
-        get() = elementData.size
+    var elementData = IntArray(initialSize, init)
+        private set
+
 
     fun growBy(byHowMuch: Int) {
         val oldCapacity: Int = elementData.size
@@ -50,7 +51,14 @@ class MonotonicIntList(size: Int, init: (Int) -> Int) : List<Int> {
 
     override fun iterator() = elementData.iterator()
 
+    fun removeLast(){
+        size--
+    }
+
     override fun get(index: Int): Int {
+        if(index !in 0 until size){
+            throw IndexOutOfBoundsException("index:$index, size:$size")
+        }
         return elementData[index]
     }
 
@@ -73,26 +81,32 @@ class MonotonicIntList(size: Int, init: (Int) -> Int) : List<Int> {
     }
 
     fun add(element: Int) {
-        growBy(1)
-        elementData[elementData.size - 1] = element
+        if(size >= elementData.size){
+            growBy(10)
+        }
+        elementData[size] = element
+        size++
     }
 
     operator fun set(index: Int, element: Int) {
+        if(index !in 0 until size){
+            throw IndexOutOfBoundsException("index:$index, size:$size")
+        }
         elementData[index] = element
     }
 
     fun addFromArray(elements: IntArray) {
-        val prevSize = size
         growBy(elements.size)
-        System.arraycopy(elements, 0, elementData, prevSize, elements.size)
+        System.arraycopy(elements, 0, elementData, size, elements.size)
+        size += elements.size
     }
 
     fun addAll(elements: Collection<Int>) {
-        val prevSize = size
         growBy(elements.size)
         for ((index, elem) in elements.withIndex()) {
-            elementData[prevSize + index] = elem
+            elementData[size + index] = elem
         }
+        size += elements.size
     }
 
     /**

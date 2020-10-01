@@ -1,7 +1,6 @@
 package parsleyj.arucoslam.datamodel
 
 
-
 /**
  * A [List] of [Double]s, backed by an array, to which new elements can be added and elements
  * belonging to the list can be replaced but cannot be removed. In other words, the number
@@ -27,11 +26,11 @@ class MonotonicDoubleList(initalSize: Int, init: (Int) -> Double) : List<Double>
 
     constructor(collection: List<Double>) : this(collection.size, collection::get)
 
-    var elementData = DoubleArray(initalSize, init)
+    override var size = initalSize
         private set
 
-    override val size: Int
-        get() = elementData.size
+    var elementData = DoubleArray(initalSize, init)
+        private set
 
 
     fun growBy(byHowMuch: Int) {
@@ -48,11 +47,18 @@ class MonotonicDoubleList(initalSize: Int, init: (Int) -> Double) : List<Double>
 
     override fun containsAll(elements: Collection<Double>) = elements.all { it in this }
 
-    override fun isEmpty()= size == 0
+    override fun isEmpty() = size == 0
 
     override fun iterator() = elementData.iterator()
 
+    fun removeLast(){
+        size--
+    }
+
     override fun get(index: Int): Double {
+        if (index !in 0 until size) {
+            throw IndexOutOfBoundsException("index:$index, size:$size")
+        }
         return elementData[index]
     }
 
@@ -74,27 +80,33 @@ class MonotonicDoubleList(initalSize: Int, init: (Int) -> Double) : List<Double>
         return this.toList().subList(fromIndex, toIndex)
     }
 
-    fun add(element: Double){
-        growBy(1)
-        elementData[elementData.size-1] = element
+    fun add(element: Double) {
+        if (size >= elementData.size) {
+            growBy(10)
+        }
+        elementData[size] = element
+        size++
     }
 
-    operator fun set(index:Int, element: Double){
+    operator fun set(index: Int, element: Double) {
+        if (index !in 0 until size) {
+            throw IndexOutOfBoundsException("index:$index, size:$size")
+        }
         elementData[index] = element
     }
 
-    fun addFromArray(elements:DoubleArray){
-        val prevSize = size
+    fun addFromArray(elements: DoubleArray) {
         growBy(elements.size)
-        System.arraycopy(elements, 0, elementData, prevSize, elements.size)
+        System.arraycopy(elements, 0, elementData, size, elements.size)
+        size += elements.size
     }
 
-    fun addAll(elements: Collection<Double>){
-        val prevSize = size
+    fun addAll(elements: Collection<Double>) {
         growBy(elements.size)
-        for((index,elem) in elements.withIndex()){
-            elementData[prevSize+index] = elem
+        for ((index, elem) in elements.withIndex()) {
+            elementData[size + index] = elem
         }
+        size += elements.size
     }
 
     /**
@@ -118,7 +130,6 @@ class MonotonicDoubleList(initalSize: Int, init: (Int) -> Double) : List<Double>
             if (!hasNext()) throw NoSuchElementException()
             return get(index++)
         }
-
 
 
         override fun hasPrevious(): Boolean = index > 0

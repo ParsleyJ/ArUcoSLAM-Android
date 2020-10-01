@@ -1,16 +1,13 @@
 package parsleyj.arucoslam.pipeline
 
 import kotlinx.coroutines.*
-import parsleyj.arucoslam.FrameProcessor
-import parsleyj.arucoslam.backgroundExec
 import parsleyj.arucoslam.defaultDispatcher
-import parsleyj.kotutils.with
 
 open class Worker<InputT, OutputT, SupportDataT>(
     val recycledState: SupportDataT,
     emptyOutput: OutputT,
     private val coroutineScope: CoroutineScope = defaultDispatcher,
-    val block: suspend (InputT, OutputT, SupportDataT) -> Unit,
+    val block: suspend (InputT, OutputT, SupportDataT, Long, Long) -> Unit,
     val onDone: Worker<InputT, OutputT, SupportDataT>.() -> Unit
 ) {
     private val result = emptyOutput
@@ -36,7 +33,7 @@ open class Worker<InputT, OutputT, SupportDataT>(
                 done()
             } else {
                 try {
-                    block(inp, result, recycledState)
+                    block(inp, result, recycledState, requestToken, System.currentTimeMillis())
                 } catch (e: Throwable) {
                     e.printStackTrace()
                 }

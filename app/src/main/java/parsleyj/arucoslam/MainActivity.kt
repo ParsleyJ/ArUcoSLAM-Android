@@ -5,14 +5,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
-import android.view.Menu
-import android.view.MenuItem
-import android.view.SurfaceView
-import android.view.WindowManager
+import android.view.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import kotlinx.android.synthetic.main.activity_main.*
+import kotlinx.coroutines.delay
 import org.opencv.android.FixedCameraBridgeViewBase
 import org.opencv.android.OpenCVLoader
 import org.opencv.core.Mat
@@ -59,9 +57,12 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         PoseValidityConstraints(
             0.5, // a pose estimate obtained with RANSAC should have at least 50% of inliers
             0.8, // not expected to exceed 0.8 meters per second when detecting a new pose
-            2.0*PI/3.0 // not expected to exceed 120 degrees per second of rotation
+            2.0 * PI / 3.0 // not expected to exceed 120 degrees per second of rotation
         )
     }
+
+    private var fullScreenMapMode = false
+    private var freezeRendering = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,6 +76,19 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         opencvCamera.visibility = SurfaceView.VISIBLE
         opencvCamera.setCvCameraViewListener(this)
         opencvCamera.setMaxFrameSize(2000, 2000)
+        opencvCamera.setOnClickListener {
+            synchronized(this@MainActivity) {
+                fullScreenMapMode = !fullScreenMapMode
+                if(!fullScreenMapMode){
+                    freezeRendering = false
+                }else{
+                    guiExec {
+                        delay(100)
+                        freezeRendering = true
+                    }
+                }
+            }
+        }
     }
 
 
@@ -95,6 +109,10 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     }
 
     override fun onOptionsItemSelected(item: MenuItem) = when (item.itemId) {
+        R.id.action_drop_last_marker -> {
+            markerSpace.removeLastMarker()
+            true
+        }
         else -> super.onOptionsItemSelected(item)
     }
 
@@ -133,8 +151,6 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     }
 
 
-    
-
     override fun onCameraFrame(inputFrame: FixedCameraBridgeViewBase.CvCameraViewFrame?): Mat? {
         if (inputFrame != null) {
             Log.v(TAG, "inputFrame != null")
@@ -149,17 +165,23 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                     poseValidityConstraints,
                     inputMat.size(),
                     inputMat.type(),
-                    3, // number of parallel workers on frames
+                    3, // number of parallel workers on frames //TODO
+                    isFullScreenMode = {
+                        synchronized(this@MainActivity) {
+                            fullScreenMapMode
+                        }
+                    }
                 )
             }
 
-
-            slamFramePipeline.supply(inputMat)
-            val usage = slamFramePipeline.usage()
-            Log.d(TAG, "FrameStream usage = $usage")
-            if (usage > 51.0) {
-                for (i in 0 until 10) {
-                    Log.d(TAG, "USAGE > 51%!" + (0 until i).map { "!" }.joinWithSeparator(""))
+            if(!freezeRendering) {
+                slamFramePipeline.supply(inputMat)
+                val usage = slamFramePipeline.usage()
+                Log.d(TAG, "FrameStream usage = $usage")
+                if (usage > 51.0) {
+                    for (i in 0 until 10) {
+                        Log.d(TAG, "USAGE > 51%!" + (0 until i).map { "!" }.joinWithSeparator(""))
+                    }
                 }
             }
             return slamFramePipeline.retrieve()

@@ -2,9 +2,14 @@ package parsleyj.arucoslam.framepipeline
 
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
+import org.opencv.core.Core.FONT_HERSHEY_COMPLEX_SMALL
 import org.opencv.core.Mat
+import org.opencv.core.Point
+import org.opencv.core.Scalar
 import org.opencv.core.Size
+import org.opencv.imgproc.Imgproc
 import parsleyj.arucoslam.*
+import parsleyj.arucoslam.NativeMethods.*
 import parsleyj.arucoslam.datamodel.CalibData
 import parsleyj.arucoslam.datamodel.Pose3d
 import parsleyj.arucoslam.datamodel.Track
@@ -12,6 +17,8 @@ import parsleyj.arucoslam.datamodel.Vec3d
 import parsleyj.arucoslam.datamodel.slamspace.SLAMMarker
 import parsleyj.arucoslam.datamodel.slamspace.SLAMSpace
 import parsleyj.arucoslam.pipeline.WorkerPipelinePool
+import java.time.Instant
+import java.util.*
 import kotlin.math.PI
 
 
@@ -28,6 +35,7 @@ class SLAMFramePipeline(
     private val jobTimeout: Long = 1000L,
     var mapCameraRotation: Vec3d = Vec3d(-PI / 2.0, 0.0, 0.0),
     var mapCameraTranslation: Vec3d = Vec3d(0.0, -1.0, 10.0),
+    isFullScreenMode: () -> Boolean,
 ) : WorkerPipelinePool<Mat, Mat, FrameRecyclableData>(
     maxWorkers,
     { Mat.zeros(frameSize, frameType) },
@@ -45,162 +53,262 @@ class SLAMFramePipeline(
     },
     coroutineScope,
     jobTimeout,
-    block = { inMat, outMat, (foundIDs, foundRvecs, foundTvecs, estimatedPose) ->
-        val currentTimestamp = System.currentTimeMillis()
-        val (estimatedPositionRVec, estimatedPositionTVec) = estimatedPose.asPairOfVec3d()
-
-        // find all the markers in the image and estimate their poses w.r.t. camera
-        val foundMarkersCount = NativeMethods.detectMarkers(
-            calibDataSupplier().cameraMatrix.nativeObjAddr,
-            calibDataSupplier().distCoeffs.nativeObjAddr,
-            inMat.nativeObjAddr,
-            outMat.nativeObjAddr,
-            0.079,
-            maxMarkersPerFrame,
-            foundIDs,
-            foundRvecs,
-            foundTvecs
-        )
+    block = block@{ inMat, outMat, (foundIDs, foundRvecs, foundTvecs, estimatedPose), frameNumber, frameTimeStamp ->
+        fun staleJob() = System.currentTimeMillis() - frameTimeStamp > jobTimeout
 
         // get the known markers as arrays (no copy is done here)
         val (
             fixedMarkerIds,
             fixedMarkerRvects,
             fixedMarkerTvects,
-
             fixedMarkerCount,
         ) = markerSpace.asArrays()
 
-        val newPhonePoseAvailable: Boolean
-        val validNewPhonePoseAvailable: Boolean
-        val lastPoseWithTimestamp: Pair<Pose3d, Long>? = track.lastPose()
-        val lastPoseAvailable = lastPoseWithTimestamp != null
-        val renderedPose: Pose3d?
+        val (estimatedPositionRVec, estimatedPositionTVec) = estimatedPose.asPairOfVec3d()
 
-        // if markers are found
-        if (foundMarkersCount > 0) {
-            // attempt to estimate a new phone pose
-            val inliersCount = NativeMethods.estimateCameraPosition(
-                calibDataSupplier().cameraMatrix.nativeObjAddr, //in
-                calibDataSupplier().distCoeffs.nativeObjAddr, //in
-                outMat.nativeObjAddr, //in&out
-                fixedMarkerCount, //in
-                fixedMarkerIds, //in
-                fixedMarkerRvects, //in
-                fixedMarkerTvects, //in
-                markerSpace.commonLength, //in
-                foundMarkersCount, //in
-                foundIDs, //in
-                foundRvecs, //in
-                foundTvecs, //in
-                estimatedPositionRVec.asDoubleArray(), //out
-                estimatedPositionTVec.asDoubleArray(), //out
-            )
-
-            newPhonePoseAvailable = true
-
-            var knownMarkersFoundCount = 0
-            for(i in 0 until foundMarkersCount){
-                if(foundIDs[i] in fixedMarkerIds){
-                    knownMarkersFoundCount++
-                }
-            }
-
-            // evaluate the validity of the estimate;
-            // if the estimated pose is valid
-            validNewPhonePoseAvailable = poseValidityConstraints.estimatedPoseIsValid(
-                currentTimestamp,
-                estimatedPose,
-                track,
-                knownMarkersFoundCount,
-                inliersCount
-            )
-
-        } else {
-            newPhonePoseAvailable = false
-            validNewPhonePoseAvailable = false
+        if (staleJob()) {
+            return@block
         }
 
-        if(validNewPhonePoseAvailable){
-            Log.d("SLAMFramePipeline", "pose estimate: $estimatedPose")
+        val fullScreenMode = isFullScreenMode()
+        val mapSizeInPixels = inMat.rows() / 2
 
-            // update the track
-            track.addPose(estimatedPose, currentTimestamp)
+        if (fullScreenMode) {
+            val lastPoseWithTimestamp: Pair<Pose3d, Long>? = track.lastPose()
+            val lastPoseAvailable = lastPoseWithTimestamp != null
+            lastPoseWithTimestamp?.let { (lastPose, _) -> lastPose.copyTo(estimatedPose) }
 
-            // update new markers found
-            for(i in 0 until foundMarkersCount){
-                if(foundIDs[i] !in fixedMarkerIds){
+            renderMap(
+                // currently known markers:
+                markerSpace.commonLength,
+                fixedMarkerRvects,
+                fixedMarkerTvects,
+                fixedMarkerCount,
+
+                // pose of the "virtual" map camera
+                mapCameraRotation.asDoubleArray(),
+                mapCameraTranslation.asDoubleArray(),
+
+                // horizontal and vertical FOV of the virtual camera
+                PI / 2.0,
+                PI / 2.0,
+
+                // horizontal and vertical sensor aperture of the virtual camera
+                2400.0,
+                2400.0,
+
+                // info about the current phone pose
+                if (lastPoseAvailable) PHONE_POSE_STATUS_LAST_KNOWN else PHONE_POSE_STATUS_UNAVAILABLE,
+                estimatedPositionRVec.asDoubleArray(),
+                estimatedPositionTVec.asDoubleArray(),
+
+                // history of positions
+                track.longTermTrackTimestamps.size,
+                track.longTermTrackRvecs.elementData,
+                track.longTermTrackTvecs.elementData,
+
+                // size and topLeft corner position of the map box
+                mapSizeInPixels,
+                mapSizeInPixels,
+                inMat.cols() - mapSizeInPixels,
+                inMat.rows() - mapSizeInPixels,
+
+                // mat on which the map box will be rendered
+                outMat.nativeObjAddr,
+                true //full screen mode
+            )
+        } else {
+
+            // find all the markers in the image and estimate their poses w.r.t. camera
+            val foundMarkersCount = detectMarkers(
+                calibDataSupplier().cameraMatrix.nativeObjAddr,
+                calibDataSupplier().distCoeffs.nativeObjAddr,
+                inMat.nativeObjAddr,
+                outMat.nativeObjAddr,
+                markerSpace.commonLength,
+                maxMarkersPerFrame,
+                foundIDs,
+                foundRvecs,
+                foundTvecs
+            )
+
+
+            val newPhonePoseAvailable: Boolean
+            val validNewPhonePoseAvailable: Boolean
+            val lastPoseWithTimestamp: Pair<Pose3d, Long>? = track.lastPose()
+            val lastPoseAvailable = lastPoseWithTimestamp != null
+
+            if (staleJob()) {
+                return@block
+            }
+            // if markers are found
+            if (foundMarkersCount > 0) {
+                // attempt to estimate a new phone pose
+                val inliersCount = estimateCameraPosition(
+                    calibDataSupplier().cameraMatrix.nativeObjAddr, //in
+                    calibDataSupplier().distCoeffs.nativeObjAddr, //in
+                    outMat.nativeObjAddr, //in&out
+                    fixedMarkerCount, //in
+                    fixedMarkerIds, //in
+                    fixedMarkerRvects, //in
+                    fixedMarkerTvects, //in
+                    markerSpace.commonLength, //in
+                    foundMarkersCount, //in
+                    foundIDs, //in
+                    foundRvecs, //in
+                    foundTvecs, //in
+                    estimatedPositionRVec.asDoubleArray(), //out
+                    estimatedPositionTVec.asDoubleArray(), //out
+                )
+                newPhonePoseAvailable = true
+                if (staleJob()) {
+                    return@block
+                }
+                var knownMarkersFoundCount = 0
+                for (i in 0 until foundMarkersCount) {
+                    if (foundIDs[i] in fixedMarkerIds) {
+                        knownMarkersFoundCount++
+                    }
+                }
+
+                // evaluate the validity of the estimate;
+                // if the estimated pose is valid
+                validNewPhonePoseAvailable = poseValidityConstraints.estimatedPoseIsValid(
+                    frameTimeStamp,
+                    estimatedPose,
+                    track,
+                    knownMarkersFoundCount,
+                    inliersCount
+                )
+                if (staleJob()) {
+                    return@block
+                }
+            } else {
+                newPhonePoseAvailable = false
+                validNewPhonePoseAvailable = false
+            }
+
+            Imgproc.putText(
+                outMat,
+                "KNOWN MARKERS: ${markerSpace.size}",
+                Point(30.0, 30.0),
+                FONT_HERSHEY_COMPLEX_SMALL,
+                0.8,
+                Scalar(50.0, 255.0, 50.0),
+                1
+            )
+
+            Imgproc.putText(
+                outMat,
+                "FRAME NUMBER = $frameNumber",
+                Point(30.0, 70.0),
+                FONT_HERSHEY_COMPLEX_SMALL,
+                0.8,
+                Scalar(50.0, 255.0, 50.0),
+                1
+            )
+            if (staleJob()) {
+                return@block
+            }
+            if (newPhonePoseAvailable) {
+                Log.d("SLAMFramePipeline", "pose estimate: $estimatedPose " +
+                        "at time ${Date.from(Instant.ofEpochMilli(frameTimeStamp))}" +
+                        "for frame $frameNumber")
+            }
+            if (staleJob()) {
+                return@block
+            }
+            if (validNewPhonePoseAvailable) {
+                // update the track
+                track.addPose(estimatedPose, frameTimeStamp)
+
+                // update new markers found
+                for (i in 0 until foundMarkersCount) {
+                    if (staleJob()) {
+                        return@block
+                    }
                     markerSpace.addIfNotPresent(
                         SLAMMarker(
                             foundIDs[i],
                             estimatedPose * Pose3d(
                                 Vec3d(
-                                    foundRvecs[i*3],
-                                    foundRvecs[i*3+1],
-                                    foundRvecs[i*3+2],
+                                    foundRvecs[i * 3],
+                                    foundRvecs[i * 3 + 1],
+                                    foundRvecs[i * 3 + 2],
                                 ),
                                 Vec3d(
-                                    foundTvecs[i*3],
-                                    foundTvecs[i*3+1],
-                                    foundTvecs[i*3+2],
+                                    foundTvecs[i * 3],
+                                    foundTvecs[i * 3 + 1],
+                                    foundTvecs[i * 3 + 2],
                                 )
                             ).invertInPlace(),
                         )
                     )
                 }
             }
+            if (staleJob()) {
+                return@block
+            }
+
+
+            val phonePoseStatus = when {
+                // found a new pose estimate, but it's invalid
+                newPhonePoseAvailable &&
+                        !validNewPhonePoseAvailable -> PHONE_POSE_STATUS_INVALID
+                // found a new pose estimate and it's valid
+                validNewPhonePoseAvailable -> PHONE_POSE_STATUS_UPDATED
+                // not found a new pose estimate, however the last pose is known
+                lastPoseAvailable -> PHONE_POSE_STATUS_LAST_KNOWN
+                // no pose found yet
+                else -> PHONE_POSE_STATUS_UNAVAILABLE
+            }
+
+            if (phonePoseStatus == PHONE_POSE_STATUS_LAST_KNOWN) {
+                lastPoseWithTimestamp?.let { (lastPose, _) -> lastPose.copyTo(estimatedPose) }
+            }
+            renderMap(
+                // currently known markers:
+                markerSpace.commonLength,
+                fixedMarkerRvects,
+                fixedMarkerTvects,
+                fixedMarkerCount,
+
+                // pose of the "virtual" map camera
+                mapCameraRotation.asDoubleArray(),
+                mapCameraTranslation.asDoubleArray(),
+
+                // horizontal and vertical FOV of the virtual camera
+                PI / 2.0,
+                PI / 2.0,
+
+                // horizontal and vertical sensor aperture of the virtual camera
+                2400.0,
+                2400.0,
+
+                // info about the current phone pose
+                phonePoseStatus,
+                estimatedPositionRVec.asDoubleArray(),
+                estimatedPositionTVec.asDoubleArray(),
+
+                // history of positions
+                track.longTermTrackTimestamps.size,
+                track.longTermTrackRvecs.elementData,
+                track.longTermTrackTvecs.elementData,
+
+                // size and topLeft corner position of the map box
+                mapSizeInPixels,
+                mapSizeInPixels,
+                inMat.cols() - mapSizeInPixels,
+                inMat.rows() - mapSizeInPixels,
+
+                // mat on which the map box will be rendered
+                outMat.nativeObjAddr,
+                false
+            )
+            if (staleJob()) {
+                return@block
+            }
         }
-
-        val mapSizeInPixels = inMat.rows() / 2
-
-        val phonePoseStatus = when {
-            // found a new pose estimate, but it's invalid
-            newPhonePoseAvailable &&
-                    !validNewPhonePoseAvailable -> NativeMethods.PHONE_POSE_STATUS_INVALID
-            // found a new pose estimate and it's valid
-            validNewPhonePoseAvailable -> NativeMethods.PHONE_POSE_STATUS_UPDATED
-            // not found a new pose estimate, however the last pose is known
-            lastPoseAvailable -> NativeMethods.PHONE_POSE_STATUS_LAST_KNOWN
-            // no pose found yet
-            else -> NativeMethods.PHONE_POSE_STATUS_UNAVAILABLE
-        }
-
-        NativeMethods.renderMap(
-            // currently known markers:
-            fixedMarkerRvects,
-            fixedMarkerTvects,
-
-            // pose of the "virtual" map camera
-            mapCameraRotation.asDoubleArray(),
-            mapCameraTranslation.asDoubleArray(),
-
-            // horizontal and vertical FOV of the virtual camera
-            PI / 2.0,
-            PI / 2.0,
-
-            // horizontal and vertical sensor aperture of the virtual camera
-            2400.0,
-            2400.0,
-
-            // info about the current phone pose
-            phonePoseStatus,
-            estimatedPositionRVec.asDoubleArray(),
-            estimatedPositionTVec.asDoubleArray(),
-
-            // history of positions
-            track.longTermTrackTimestamps.size,
-            track.longTermTrackRvecs.elementData,
-            track.longTermTrackTvecs.elementData,
-
-            // size and topLeft corner position of the map box
-            mapSizeInPixels,
-            mapSizeInPixels,
-            inMat.cols() - mapSizeInPixels,
-            inMat.rows() - mapSizeInPixels,
-
-            // mat on which the map box will be rendered
-            outMat.nativeObjAddr
-        )
     },
     onCannotProcess = { _, input -> input }
 )

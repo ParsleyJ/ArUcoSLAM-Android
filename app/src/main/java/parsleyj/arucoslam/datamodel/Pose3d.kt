@@ -59,6 +59,11 @@ inline class Pose3d(private val pair: Pair<Vec3d, Vec3d>) {
         return result
     }
 
+    fun copyTo(other: Pose3d){
+        this.translationVector.copyTo(other.translationVector)
+        this.rotationVector.copyTo(other.rotationVector)
+    }
+
     /**
      * Inverts the RT trasformation associated with this pose by not allocating any support
      * structures in the heap, and by directly changing the data in this pose.

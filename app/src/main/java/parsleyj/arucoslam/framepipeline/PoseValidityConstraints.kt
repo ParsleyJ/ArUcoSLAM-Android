@@ -10,8 +10,6 @@ class PoseValidityConstraints(
     val maxAngularSpeed: Double, // in radians per second
 ) {
 
-
-
     fun estimatedPoseIsValid(
         currentPoseTimestamp: Long,
         currentPoseEstimate: Pose3d,
@@ -19,7 +17,15 @@ class PoseValidityConstraints(
         detectedKnownMarkersCount: Int,
         inliersCount: Int,
     ): Boolean {
-        if(detectedKnownMarkersCount <= 0){
+        if(currentPoseEstimate.rotationVector.asDoubleArray().any(Double::isNaN)){
+           return false
+        }
+
+        if(currentPoseEstimate.translationVector.asDoubleArray().any(Double::isNaN)){
+            return false
+        }
+
+        if(detectedKnownMarkersCount <= 0 || inliersCount <= 0){
             return false
         }
 
