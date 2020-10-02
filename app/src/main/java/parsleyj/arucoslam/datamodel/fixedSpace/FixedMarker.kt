@@ -3,6 +3,9 @@ package parsleyj.arucoslam.datamodel.fixedSpace
 import parsleyj.arucoslam.datamodel.Pose3d
 import parsleyj.arucoslam.datamodel.Vec3d
 
+/**
+ * A marker with a fixed pose in the world and a side length in meters.
+ */
 data class FixedMarker(
     val markerId: Int,
     val pose3d: Pose3d,

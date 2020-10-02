@@ -3,16 +3,15 @@ package parsleyj.arucoslam.datamodel
 
 /**
  * A [List] of [Int]s, backed by an array, to which new elements can be added and elements
- * belonging to the list can be replaced but cannot be removed. In other words, the number
- * of elements in the list (i.e. the [size]) can only grow or stay the same over time.
+ * belonging to the list can be replaced but only the last one can be removed.
  * This constraint allows to store elements inside a contiguous array of [Int]s.
  * Moreover, the backing array is directly accessible via [elementData] and the data
  * inside it is always consistent with the data represented by this list.
- * For this reason the backing array grows each time an "add" operation is performed;
+ * For this reason the backing array could grow each time an "add" operation is performed;
  * in this regard, please be careful by optimizing using [addFromArray] and [addAll] when adding
- * multiple elements.
+ * multiple elements at the same time.
  */
-class MonotonicIntList(initialSize: Int, init: (Int) -> Int) : List<Int> {
+class ContiguousIntList(initialSize: Int, init: (Int) -> Int) : List<Int> {
     companion object {
         const val DEFAULT_CAPACITY = 10
         private const val MAX_ARRAY_SIZE = Int.MAX_VALUE - 8

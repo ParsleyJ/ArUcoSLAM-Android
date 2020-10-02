@@ -12,9 +12,6 @@
 #include <mutex>
 
 
-#define declareAndInitMat(T, varName, rows, cols, cvType, ...) cv::Mat  varName = (cv::Mat_<T>(rows, cols, cvType) << __VA_ARGS__)
-
-
 /**
  * Custom definition of the "parallel for" construct which implements the fork-join paradigm.
  *

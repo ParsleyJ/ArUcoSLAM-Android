@@ -3,21 +3,24 @@ package parsleyj.arucoslam.datamodel.slamspace
 import parsleyj.arucoslam.datamodel.*
 import parsleyj.arucoslam.flattenVecs
 import parsleyj.kotutils.Tuple4
-import parsleyj.kotutils.Tuple5
 import parsleyj.kotutils.itMap
 import parsleyj.kotutils.tuple
 import java.lang.Integer.min
 
-
+/**
+ * A mutable data structure which defines a 3D world of ArUco makers, for SLAM applications.
+ * All the markers belong to the same [dictionary] and have the same side length ([commonLength]).
+ * The data about the markers is stored inside three special kind of lists (see [ContiguousIntList]
+ * and [ContiguousDoubleList]) which allows native methods written in C++ to access to them directly
+ * as jintarray or jdoublearray.
+ */
 class SLAMSpace(
     val dictionary: ArucoDictionary,
-    val markerIDs: MonotonicIntList,
-    val markerRVects: MonotonicDoubleList,
-    val markerTVects: MonotonicDoubleList,
+    val markerIDs: ContiguousIntList,
+    val markerRVects: ContiguousDoubleList,
+    val markerTVects: ContiguousDoubleList,
     val commonLength: Double,
 ) : Iterable<SLAMMarker> {
-
-
 
     constructor(
         dictionary: ArucoDictionary,
@@ -25,9 +28,9 @@ class SLAMSpace(
         markers: List<SLAMMarker> = emptyList(),
     ) : this(
         dictionary,
-        MonotonicIntList(markers.map { it.markerId }),
-        MonotonicDoubleList(markers.map { it.pose3d.rotationVector }.flattenVecs()),
-        MonotonicDoubleList(markers.map { it.pose3d.translationVector }.flattenVecs()),
+        ContiguousIntList(markers.map { it.markerId }),
+        ContiguousDoubleList(markers.map { it.pose3d.rotationVector }.flattenVecs()),
+        ContiguousDoubleList(markers.map { it.pose3d.translationVector }.flattenVecs()),
         commonLength,
     )
 

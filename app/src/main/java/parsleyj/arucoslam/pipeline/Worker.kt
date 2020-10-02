@@ -3,6 +3,13 @@ package parsleyj.arucoslam.pipeline
 import kotlinx.coroutines.*
 import parsleyj.arucoslam.defaultDispatcher
 
+/**
+ * A Worker takes an input of type [InputT] and performs a computation, by using the support
+ * data structure of type [SupportDataT] and by saving the result of such computation on a data
+ * structure of type [OutputT]. This system is optimized to carry out a succession of computations;
+ * in fact, the output and support data structures are recycled and never re-allocated between a
+ * computation an the other.
+ */
 open class Worker<InputT, OutputT, SupportDataT>(
     val recycledState: SupportDataT,
     emptyOutput: OutputT,

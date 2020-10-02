@@ -8,8 +8,10 @@
 #include <mutex>
 #include <opencv2/core/core.hpp>
 #include "utils.h"
-
-
+/**
+ * utility function used to get the i-th number of a vector if such element existed, otherwise,
+ * returns 1.0
+ */
 double getWeight(int i, const std::vector<double>& weights = std::vector<double>()){
     if(weights.size() <= i){
         return 1.0;
@@ -18,6 +20,9 @@ double getWeight(int i, const std::vector<double>& weights = std::vector<double>
     }
 }
 
+/**
+ * Computes the weighted mean angle in an iterable of angles.
+ */
 template<typename ITERABLE>
 double meanAngle(const ITERABLE &c, const std::vector<double>& weights = std::vector<double>()) {
     auto it = std::begin(c);
@@ -36,6 +41,9 @@ double meanAngle(const ITERABLE &c, const std::vector<double>& weights = std::ve
     return atan2(y, x);
 }
 
+/**
+ * Computes the weighted average rotation in a collection of rotations.
+ */
 void computeAngleCentroid(
         const std::vector<cv::Vec3d> &rvecs,
         cv::Vec3d &angleCentroid,
@@ -57,7 +65,9 @@ void computeAngleCentroid(
     }
 }
 
-
+/**
+ * Computes the weighted centroid of various 3D points in space.
+ */
 void computeCentroid(
         const std::vector<cv::Vec3d> &vecs,
         cv::Vec3d &centre,
@@ -79,6 +89,24 @@ void computeCentroid(
     centre[2] /= weightSum;
 }
 
+/**
+ * Computes a vector which is an estimate of 3D vectors by using the RANSAC method.
+ * @param vecs the collection of input vectors
+ * @param foundModel the computed vector estimate
+ * @param inlierThreshold if the evaluation of the distanceFunction between the centroid and a point
+ *                        in the space is greater than this parameter, that point is an outlier
+ * @param outlierProbability the probability that a random subset of the input vectors contains at
+ *                           least one outlier
+ * @param targetOptimalModelProbability the desired probability that the found estimate is the
+ *                                      optimal one - used to determine the number of iterations
+ * @param maxN max number of iterations
+ * @param inliers reference on which the number of the inliers is written
+ * @param distanceFunction function that takes two vector and returns their distance; defaults to the
+ *                          euclidean norm of the difference of the two vectors
+ * @param centroidComputer function that computes the weighted average vector of a set of vectors
+ * @param weights vector of the weight used to compute the averages; defaults to an empty vector,
+ *                          which means that all the weigths are 1.0.
+ */
 void vectorRansac(
         const std::vector<cv::Vec3d> &vecs,
         cv::Vec3d &foundModel,
@@ -171,7 +199,10 @@ void vectorRansac(
     centroidComputer(bestInliers, foundModel, bestWeigths);
 }
 
-double eulerAnglesAngularDistance(const cv::Vec3d &p1, const cv::Vec3d &p2){
+/**
+ * Computes the "rotational" distance between two orientations.
+ */
+double angularDistance(const cv::Vec3d &p1, const cv::Vec3d &p2){
     return cv::norm(cv::Vec3d(
             atan2(sin(p1[0] - p2[0]), cos(p1[0] - p2[0])),
             atan2(sin(p1[1] - p2[1]), cos(p1[1] - p2[1])),
@@ -179,6 +210,10 @@ double eulerAnglesAngularDistance(const cv::Vec3d &p1, const cv::Vec3d &p2){
     ));
 }
 
+/**
+ * Estimates a pose by using two RANSACs, one for the translation vectors and one for the rotation
+ * vectors.
+ */
 int estimateCameraPose(
         const std::vector<cv::Vec3d> &rvecs,
         const std::vector<cv::Vec3d> &tvecs,
@@ -211,7 +246,7 @@ int estimateCameraPose(
             optimalModelTargetProbability,
             maxRansacIterations,
             inliers,
-            &eulerAnglesAngularDistance,
+            &angularDistance,
             &computeAngleCentroid
     );
 

@@ -15,9 +15,9 @@ import org.opencv.android.FixedCameraBridgeViewBase
 import org.opencv.android.OpenCVLoader
 import org.opencv.core.Mat
 import parsleyj.arucoslam.datamodel.*
-import parsleyj.arucoslam.datamodel.fixedSpace.MarkerTaggedSpace
+import parsleyj.arucoslam.datamodel.fixedSpace.FixedMarkerTaggedSpace
 import parsleyj.arucoslam.framepipeline.PoseValidityConstraints
-import parsleyj.arucoslam.framepipeline.SLAMFramePipeline
+import parsleyj.arucoslam.framepipeline.SLAMFrameRenderer
 import parsleyj.kotutils.joinWithSeparator
 import kotlin.math.PI
 
@@ -32,14 +32,15 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
     }
 
     private val cameraParameters: CalibData by lazy {
-        CalibData.xiaomiMiA1RearCamera
+        CalibData.xiaomiMiA1RearCamera // for now, the camera parameters are the one of the
+        // Xiaomi Mi A1 rear phone main camera.
     }
 
-    private lateinit var slamFramePipeline: SLAMFramePipeline
+    private lateinit var slamFrameRenderer: SLAMFrameRenderer
 
 
     private val markerSpace by lazy {
-        MarkerTaggedSpace.singleMarker(
+        FixedMarkerTaggedSpace.singleMarker(
             dictionary = ArucoDictionary.DICT_6X6_250,
             id = 3,
             markerLength = 0.079
@@ -57,7 +58,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
         PoseValidityConstraints(
             0.5, // a pose estimate obtained with RANSAC should have at least 50% of inliers
             0.8, // not expected to exceed 0.8 meters per second when detecting a new pose
-            2.0 * PI / 3.0 // not expected to exceed 120 degrees per second of rotation
+            PI // not expected to exceed 180 degrees per second of "overall" rotation
         )
     }
 
@@ -156,8 +157,8 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
             Log.v(TAG, "inputFrame != null")
             val inputMat = inputFrame.rgba()
 
-            if (!this::slamFramePipeline.isInitialized) {
-                slamFramePipeline = SLAMFramePipeline(
+            if (!this::slamFrameRenderer.isInitialized) {
+                slamFrameRenderer = SLAMFrameRenderer(
                     DETECTED_MARKERS_MAX_OUTPUT,
                     { cameraParameters },
                     markerSpace,
@@ -165,7 +166,7 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
                     poseValidityConstraints,
                     inputMat.size(),
                     inputMat.type(),
-                    3, // number of parallel workers on frames //TODO
+                    3, // number of parallel workers on frames
                     isFullScreenMode = {
                         synchronized(this@MainActivity) {
                             fullScreenMapMode
@@ -175,16 +176,16 @@ class MainActivity : AppCompatActivity(), FixedCameraBridgeViewBase.CvCameraView
             }
 
             if(!freezeRendering) {
-                slamFramePipeline.supply(inputMat)
-                val usage = slamFramePipeline.usage()
-                Log.d(TAG, "FrameStream usage = $usage")
-                if (usage > 51.0) {
+                slamFrameRenderer.supply(inputMat)
+                val usage = slamFrameRenderer.usage()
+                Log.d(TAG, "Pipeline usage = $usage")
+                if (usage > 60.0) {
                     for (i in 0 until 10) {
-                        Log.d(TAG, "USAGE > 51%!" + (0 until i).map { "!" }.joinWithSeparator(""))
+                        Log.d(TAG, "USAGE > 60%!" + (0 until i).map { "!" }.joinWithSeparator(""))
                     }
                 }
             }
-            return slamFramePipeline.retrieve()
+            return slamFrameRenderer.retrieve()
 
 
         } else {

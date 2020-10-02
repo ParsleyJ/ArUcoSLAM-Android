@@ -16,14 +16,31 @@ import parsleyj.arucoslam.datamodel.Track
 import parsleyj.arucoslam.datamodel.Vec3d
 import parsleyj.arucoslam.datamodel.slamspace.SLAMMarker
 import parsleyj.arucoslam.datamodel.slamspace.SLAMSpace
-import parsleyj.arucoslam.pipeline.WorkerPipelinePool
+import parsleyj.arucoslam.pipeline.RenderingWorkerPool
 import java.time.Instant
 import java.util.*
 import kotlin.math.PI
 
-
-class SLAMFramePipeline(
-    private val maxMarkersPerFrame: Int, // how many markers are considered by the detector at each frame
+/**
+ * A specialized version of a [RenderingWorkerPool] used to process the frames for the SLAM app.
+ *
+ * @param maxMarkersPerFrame max number of markers detected by the detector at each frame
+ * @param calibDataSupplier function that supplies the phone's camera parameters
+ * @param markerSpace mutable data structure that defines a 3D world of ArUco markers with their poses
+ * @param track mutable data structure used to store the history of positions
+ * @param poseValidityConstraints set of data used to define the constraints to determine if a new
+ *                                computed pose is valid
+ * @param frameSize size of the frames
+ * @param frameType OpenCV type of the frames
+ * @param maxWorkers maximum number of parallel workers
+ * @param coroutineScope the scope on which the jobs of the workers are launched
+ * @param jobTimeout time in milliseconds after which a job is cancelled
+ * @param mapCameraRotation orientation of the virtual camera used to render the map
+ * @param mapCameraTranslation position of the virtual camera used to render the map
+ * @param isFullScreenMode callback used to check if the map should be rendered in fullscreen mode
+ */
+class SLAMFrameRenderer(
+    private val maxMarkersPerFrame: Int,
     calibDataSupplier: () -> CalibData,
     private val markerSpace: SLAMSpace,
     private val track: Track,
@@ -36,10 +53,10 @@ class SLAMFramePipeline(
     var mapCameraRotation: Vec3d = Vec3d(-PI / 2.0, 0.0, 0.0),
     var mapCameraTranslation: Vec3d = Vec3d(0.0, -1.0, 10.0),
     isFullScreenMode: () -> Boolean,
-) : WorkerPipelinePool<Mat, Mat, FrameRecyclableData>(
+) : RenderingWorkerPool<Mat, Mat, FrameRecyclableData>(
     maxWorkers,
     { Mat.zeros(frameSize, frameType) },
-    instantiateSupportData = { // lambda that tells the FrameStreamProcessor how
+    supplyEmptySupportData = { // lambda that tells the FrameStreamProcessor how
         //  to create a recyclable support data structure
         FrameRecyclableData(
             foundIDs = IntArray(maxMarkersPerFrame) { 0 },
@@ -89,7 +106,7 @@ class SLAMFramePipeline(
                 mapCameraRotation.asDoubleArray(),
                 mapCameraTranslation.asDoubleArray(),
 
-                // horizontal and vertical FOV of the virtual camera
+                // horizontal and vertical FOV angles of the virtual camera
                 PI / 2.0,
                 PI / 2.0,
 
@@ -121,6 +138,7 @@ class SLAMFramePipeline(
 
             // find all the markers in the image and estimate their poses w.r.t. camera
             val foundMarkersCount = detectMarkers(
+                markerSpace.dictionary.toInt(),
                 calibDataSupplier().cameraMatrix.nativeObjAddr,
                 calibDataSupplier().distCoeffs.nativeObjAddr,
                 inMat.nativeObjAddr,
@@ -159,6 +177,12 @@ class SLAMFramePipeline(
                     foundTvecs, //in
                     estimatedPositionRVec.asDoubleArray(), //out
                     estimatedPositionTVec.asDoubleArray(), //out
+                    0.05, //(RANSAC) tvec inlier threshold (meters)
+                    0.1, //(RANSAC) tvec outlier probability
+                    PI/8.0, //(RANSAC) rvec inlier threshold (radians)
+                    0.1, //(RANSAC) rvec outlier pobability,
+                    100, //(RANSAC) max RANSAC iterations
+                    0.9, //(RANSAC) target probability to get the optimal model
                 )
                 newPhonePoseAvailable = true
                 if (staleJob()) {
@@ -266,6 +290,7 @@ class SLAMFramePipeline(
             if (phonePoseStatus == PHONE_POSE_STATUS_LAST_KNOWN) {
                 lastPoseWithTimestamp?.let { (lastPose, _) -> lastPose.copyTo(estimatedPose) }
             }
+
             renderMap(
                 // currently known markers:
                 markerSpace.commonLength,
@@ -277,7 +302,7 @@ class SLAMFramePipeline(
                 mapCameraRotation.asDoubleArray(),
                 mapCameraTranslation.asDoubleArray(),
 
-                // horizontal and vertical FOV of the virtual camera
+                // horizontal and vertical FOV angles of the virtual camera
                 PI / 2.0,
                 PI / 2.0,
 

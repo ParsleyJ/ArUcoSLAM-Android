@@ -7,6 +7,9 @@ import org.opencv.core.Mat
 import parsleyj.arucoslam.*
 import java.nio.DoubleBuffer
 
+/**
+ * A data structure containing camera parameter data obtained from a calibration.
+ */
 class CalibData(
     cameraMatrix: Mat,
     distCoeffs: Mat,

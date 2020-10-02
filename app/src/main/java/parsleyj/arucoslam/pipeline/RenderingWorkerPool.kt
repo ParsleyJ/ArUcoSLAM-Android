@@ -6,11 +6,30 @@ import kotlinx.coroutines.selects.select
 import parsleyj.arucoslam.backgroundExec
 import parsleyj.arucoslam.mainDispatcher
 
-
-open class WorkerPipelinePool<InputT, OutputT, SupportDataT>(
+/**
+ * A RenderingWorkerPool is a set of [Worker]s specialized for real-time rendering; the main idea
+ * behind this is that only the *last* result returned by a computation is the one that matters; so
+ * if a result is obtained too late to be retrieved, such result is discarded. This is particularly
+ * fine for image rendering where some frame skipping is acceptable. The main primitives of this
+ * concept are [supply] and [retrieve], used, respectively, to supply an input to the pool and
+ * to receive the last output available.
+ *
+ * @param maxWorkers the maximum number of parallel workers
+ * @param supplyEmptyOutput a function that constructs an empty output data structure
+ * @param supplyEmptySupportData a function that constructs an empty support data structure
+ * @param coroutineScope the scope on which the jobs of the workers are launched
+ * @param jobTimeout time in milliseconds after which a job is cancelled
+ * @param onCannotProcess a callback that tells the pool what to do when there are no free workers
+ *                        and no new workers cannot be created
+ * @param block a suspendable function that defines what to do in each job; the parameters are:
+ *              1. the input of the job; 2. the reference on which to write the output of the job;
+ *              3. the support data structure; 4. a numerical token identifying the current job;
+ *              5. unix-epoch timestamp in milliseconds of the start of the job
+ */
+open class RenderingWorkerPool<InputT, OutputT, SupportDataT>(
     private val maxWorkers: Int,
     private val supplyEmptyOutput: () -> OutputT,
-    private val instantiateSupportData: () -> SupportDataT,
+    private val supplyEmptySupportData: () -> SupportDataT,
     private val coroutineScope: CoroutineScope = mainDispatcher,
     private val jobTimeout: Long = 1000L,
     private val onCannotProcess: (OutputT, InputT) -> OutputT = { _, _ -> supplyEmptyOutput() },
@@ -30,16 +49,6 @@ open class WorkerPipelinePool<InputT, OutputT, SupportDataT>(
         }
 
     }
-
-    private suspend fun <E : Job> Iterable<E>.joinFirst(): E = select {
-        for (job in this@joinFirst) {
-            job.onJoin { job }
-        }
-    }
-
-
-    private suspend fun <E : Deferred<R>, R> Iterable<E>.awaitFirst(): R =
-        joinFirst().getCompleted()
 
 
     fun supply(input: InputT) {
@@ -119,12 +128,12 @@ open class WorkerPipelinePool<InputT, OutputT, SupportDataT>(
 
     private fun createWorker(): Worker<InputT, OutputT, SupportDataT> {
         return Worker(
-            instantiateSupportData(),
+            supplyEmptySupportData(),
             supplyEmptyOutput(),
             coroutineScope,
             block = block,
             onDone = worker@{
-                synchronized(this@WorkerPipelinePool) {
+                synchronized(this@RenderingWorkerPool) {
                     if (lastResultToken < this.requestToken) {
                         lastResult = this.retrieveResult()
                         lastResultToken = this.requestToken

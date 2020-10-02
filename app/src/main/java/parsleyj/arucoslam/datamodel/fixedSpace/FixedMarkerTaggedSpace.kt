@@ -10,7 +10,10 @@ import parsleyj.arucoslam.get
 import parsleyj.arucoslam.list
 import java.lang.RuntimeException
 
-class MarkerTaggedSpace(
+/**
+ * A 3D space tagged with markers. It is an immutable collection of markers with same [dictionary].
+ */
+class FixedMarkerTaggedSpace(
     val dictionary: ArucoDictionary,
     val markers: List<FixedMarker>
 ) {
@@ -25,7 +28,7 @@ class MarkerTaggedSpace(
             markersY: Int,
             markerLength: Double,
             markerSeparation: Double
-        ): MarkerTaggedSpace {
+        ): FixedMarkerTaggedSpace {
 
             val markers = mutableListOf<FixedMarker>()
 
@@ -50,7 +53,7 @@ class MarkerTaggedSpace(
 
 
 
-            return MarkerTaggedSpace(dictionary, markers)
+            return FixedMarkerTaggedSpace(dictionary, markers)
         }
 
         fun threeStackedMarkers(
@@ -60,8 +63,8 @@ class MarkerTaggedSpace(
             id3: Int,
             markerLength: Double,
             markerSeparation: Double
-        ): MarkerTaggedSpace {
-            return MarkerTaggedSpace(
+        ): FixedMarkerTaggedSpace {
+            return FixedMarkerTaggedSpace(
                 dictionary, list[
                         FixedMarker(
                             id1, Pose3d(
@@ -89,7 +92,7 @@ class MarkerTaggedSpace(
             dictionary: ArucoDictionary,
             id: Int,
             markerLength: Double
-        ) = MarkerTaggedSpace(
+        ) = FixedMarkerTaggedSpace(
             dictionary,
             list[FixedMarker(id, Pose3d(Vec3d.ORIGIN, Vec3d.ORIGIN), markerLength)]
         )
@@ -103,19 +106,19 @@ class MarkerTaggedSpace(
 
     operator fun get(id: Int) = markerMap[id]
 
-    infix fun movedTo(translationVector: Vec3d): MarkerTaggedSpace {
+    infix fun movedTo(translationVector: Vec3d): FixedMarkerTaggedSpace {
         return this movedTo Pose3d(Vec3d.ORIGIN, translationVector)
     }
 
-    infix fun movedTo(pose: Pose3d): MarkerTaggedSpace {
-        return MarkerTaggedSpace(
+    infix fun movedTo(pose: Pose3d): FixedMarkerTaggedSpace {
+        return FixedMarkerTaggedSpace(
             dictionary,
             markers.map { it movedTo pose }
         )
     }
 
 
-    operator fun plus(otherSpace: MarkerTaggedSpace): MarkerTaggedSpace {
+    operator fun plus(otherSpace: FixedMarkerTaggedSpace): FixedMarkerTaggedSpace {
         if (otherSpace.dictionary != this.dictionary) {
             throw RuntimeException(
                 "Cannot perform union of two marker tagged spaces " +
@@ -136,11 +139,11 @@ class MarkerTaggedSpace(
             resultMarkers.add(m)
         }
 
-        return MarkerTaggedSpace(this.dictionary, resultMarkers)
+        return FixedMarkerTaggedSpace(this.dictionary, resultMarkers)
     }
 
-    operator fun minus(ids:Collection<Int>): MarkerTaggedSpace {
-        return MarkerTaggedSpace(dictionary, markers.filter { it.markerId !in ids })
+    operator fun minus(ids:Collection<Int>): FixedMarkerTaggedSpace {
+        return FixedMarkerTaggedSpace(dictionary, markers.filter { it.markerId !in ids })
     }
 
     fun getMarkerSpecs(id: Int) = this[id]

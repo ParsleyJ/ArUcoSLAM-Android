@@ -10,8 +10,8 @@ import kotlin.reflect.KProperty
 
 /**
  * Used to solve via checksum redundancy the problem where a Mat changes its interal values after
- * the ART GC runs. Apparently Android does not care so much about memory used by jni libraries.
- * This is the nullable and mutable variant of this delegate, i.e. the managed property is
+ * the ART GC runs. It seems that the OS does not care so much about memory used by jni libraries.
+ * This is the nullable and mutable variant of this property delegate, i.e. the managed property is
  * initialized with null (!!!) and can be re-assigned. At each new assignment, a new CRC check
  * value is computed and used later to verify data integrity.
  */

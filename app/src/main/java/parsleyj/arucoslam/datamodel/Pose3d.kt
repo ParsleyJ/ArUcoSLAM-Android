@@ -2,7 +2,14 @@ package parsleyj.arucoslam.datamodel
 
 import parsleyj.arucoslam.NativeMethods
 
-
+/**
+ * A pose in a 3D world is a pair of two three-component vectors: the first one represents the
+ * rotation of the orientation from the "origin" orientation; the second one represents the
+ * translation of the position from the "origin" position.
+ * Note that this is an inline class: this means that on the JVM at runtime this class does not
+ * exist and that all the methods are compiled into Java methods that work on a pair of [Vec3d]s
+ * (which are also inline classes in their turn).
+ */
 inline class Pose3d(private val pair: Pair<Vec3d, Vec3d>) {
     constructor(
         rVec: Vec3d,
@@ -26,6 +33,10 @@ inline class Pose3d(private val pair: Pair<Vec3d, Vec3d>) {
 
     fun asPairOfVec3d() = pair
 
+    /**
+     * Returns the composition of the RT-transformation of this pose with the one of the [other]
+     * pose.
+     */
     operator fun times(other: Pose3d): Pose3d {
         val r = doubleArrayOf(0.0, 0.0, 0.0)
         val t = doubleArrayOf(0.0, 0.0, 0.0)
@@ -48,6 +59,9 @@ inline class Pose3d(private val pair: Pair<Vec3d, Vec3d>) {
         return this * Pose3d(rotationVector, Vec3d.ORIGIN)
     }
 
+    /**
+     * Returns a pose which is the inverse of the RT-transformation represented by this pose.
+     */
     fun invert():Pose3d{
         val result = Pose3d()
         NativeMethods.invertRT(

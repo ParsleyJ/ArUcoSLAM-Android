@@ -2,7 +2,6 @@ package parsleyj.arucoslam.datamodel
 
 import parsleyj.arucoslam.NativeMethods
 import parsleyj.kotutils.with
-import kotlin.math.min
 
 class Track(
     val recentPoseInterval: Long,
@@ -13,8 +12,8 @@ class Track(
     val recentPosesRvecs: DoubleArray = DoubleArray(recentPosesMaxSize * 3)
     val recentPosesTvecs: DoubleArray = DoubleArray(recentPosesMaxSize * 3)
     val recentPosesTimestamps: MutableList<Long> = mutableListOf()
-    val longTermTrackRvecs: MonotonicDoubleList = MonotonicDoubleList(0) { 0.0 }
-    val longTermTrackTvecs: MonotonicDoubleList = MonotonicDoubleList(0) { 0.0 }
+    val longTermTrackRvecs: ContiguousDoubleList = ContiguousDoubleList(0) { 0.0 }
+    val longTermTrackTvecs: ContiguousDoubleList = ContiguousDoubleList(0) { 0.0 }
     val longTermTrackTimestamps: MutableList<Long> = mutableListOf()
 
     var recentPosesSize = 0

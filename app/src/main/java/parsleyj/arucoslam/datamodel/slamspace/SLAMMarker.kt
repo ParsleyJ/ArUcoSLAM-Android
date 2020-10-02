@@ -3,6 +3,9 @@ package parsleyj.arucoslam.datamodel.slamspace
 import parsleyj.arucoslam.datamodel.Pose3d
 import parsleyj.arucoslam.datamodel.Vec3d
 
+/**
+ * A Marker, identified by an id, with its pose.
+ */
 data class SLAMMarker(
     val markerId: Int,
     val pose3d: Pose3d,

@@ -11,7 +11,6 @@
 #include "utils.h"
 #include "jniUtils.h"
 #include "positionRansac.h"
-#include "map2d.h"
 #include "opencv-extensions.h"
 
 #include <opencv2/calib3d.hpp>
@@ -20,12 +19,14 @@
 #include <cmath>
 #include <memory>
 
+/// SEE THE JAVADOCS IN NativeMethods.java
 
 extern "C"
 JNIEXPORT jint JNICALL
 Java_parsleyj_arucoslam_NativeMethods_detectMarkers(
         JNIEnv *env,
         jclass,
+        jint markerDictionary, // in
         jlong cameraMatrixAddr, // in
         jlong distCoeffsAddr, // in
         jlong inputMatAddr, // in
@@ -36,16 +37,15 @@ Java_parsleyj_arucoslam_NativeMethods_detectMarkers(
         jdoubleArray outrvecs, // out
         jdoubleArray outtvecs // out
 ) {
-    auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
+    auto dictionary = cv::aruco::getPredefinedDictionary(markerDictionary);
     cv::Mat inputMat = *castToMatPtr(inputMatAddr);
     cv::Mat resultMat = *castToMatPtr(resultMatAddr);
     cv::Mat cameraMatrix = *castToMatPtr(cameraMatrixAddr);
     cv::Mat distCoeffs = *castToMatPtr(distCoeffsAddr);
 
 
-//    logCameraParameters("native-lib:processCameraFrame", cameraMatrix, distCoeffs);
-
     std::vector<cv::Mat> channels(3);
+    // this seems to be the only way to perform a correct copy of the images:
     cv::split(inputMat, channels);
     cv::merge(channels, resultMat);
 
@@ -107,10 +107,16 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
         jdoubleArray in_rvects,
         jdoubleArray in_tvects,
         jdoubleArray outRvec,
-        jdoubleArray outTvec
+        jdoubleArray outTvec,
+        jdouble tvecInlierTreshold,// = 0.05,
+        jdouble tvecOutlierProbability,// = 0.1,
+        jdouble rvecInlierTreshold,// = M_PI / 8.0,
+        jdouble rvecOutlierProbability,// = 0.1,
+        jint maxRansacIterations,// = 100,
+        jdouble optimalModelTargetProbability// = 0.9,
 ) {
 
-    __android_log_print(ANDROID_LOG_DEBUG, "CICCIOBENZINA", "1");
+
     cv::Mat inputMat = *castToMatPtr(inputMatAddr);
     cv::Mat cameraMatrix = *castToMatPtr(cameraMatrixAddr);
     cv::Mat distCoeffs = *castToMatPtr(distCoeffsAddr);
@@ -119,7 +125,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     std::vector<cv::Vec3d> fixedMarkersTvecs;
     std::vector<cv::Vec3d> fixedMarkersRvecs;
 
-    __android_log_print(ANDROID_LOG_DEBUG, "CICCIOBENZINA", "2");
+
     pushJavaArrayToStdVector<jintArray, jint, int>(
             env,
             fixed_markers,
@@ -143,7 +149,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
             0,
             fixedMarkerCount
     );
-    __android_log_print(ANDROID_LOG_DEBUG, "CICCIOBENZINA", "3");
+
     std::vector<int> foundMarkersIDs;
     std::vector<cv::Vec3d> foundMarkersTvecs;
     std::vector<cv::Vec3d> foundMarkersRvecs;
@@ -165,7 +171,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
     cv::cvtColor(inputMat, tmpMat, CV_RGBA2RGB);
 
 
-    __android_log_print(ANDROID_LOG_DEBUG, "CICCIOBENZINA", "4");
+
     //for (int i = 0; i < foundMarkersIDs.size(); i++) {
     p_for(i, foundMarkersIDs.size()) {
         int foundMarkerID = foundMarkersIDs[i];
@@ -178,7 +184,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
             cv::Vec3d computedTvec;
             cv::Vec3d computedRvec;
 
-            __android_log_print(ANDROID_LOG_DEBUG, "CICCIOBENZINA", "startCompose (%d)", i);
+
             cv::composeRT(
                     // Transformation to switch from room's coord sys to marker's coord sys
                     fixedMarkersRvecs[fixedMarkerIndex], fixedMarkersTvecs[fixedMarkerIndex],
@@ -187,29 +193,39 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
                     // (result) Transf to change from room's coord sys to camera's coord sys
                     computedRvec, computedTvec
             );
-            __android_log_print(ANDROID_LOG_DEBUG, "CICCIOBENZINA", "endCompose (%d)", i);
 
-            __android_log_print(ANDROID_LOG_DEBUG, "CICCIOBENZINA", "startAxis (%d)", i);
+
+
             cv::aruco::drawAxis(tmpMat, cameraMatrix, distCoeffs,
                                 foundMarkersRvecs[i], foundMarkersTvecs[i], (float) fixedLenght);
-            __android_log_print(ANDROID_LOG_DEBUG, "CICCIOBENZINA", "endAxis (%d)", i);
 
-            __android_log_print(ANDROID_LOG_DEBUG, "CICCIOBENZINA", "startCS (%d)", i);
+
+
             p_for_criticalSectionBegin
                 positionTvecs.push_back(computedTvec);
                 positionRvecs.push_back(computedRvec);
             p_for_criticalSectionEnd
-            __android_log_print(ANDROID_LOG_DEBUG, "CICCIOBENZINA", "startCS (%d)", i);
+
 
         }
     };
 
     cv::cvtColor(tmpMat, inputMat, CV_RGB2RGBA);
-    __android_log_print(ANDROID_LOG_DEBUG, "CICCIOBENZINA", "5");
+
     int inliersCount;
     cv::Vec3d cameraRvec, cameraTvec;
-    inliersCount = estimateCameraPose(positionRvecs, positionTvecs,
-                                      cameraRvec, cameraTvec
+
+
+
+    inliersCount = estimateCameraPose(
+            positionRvecs, positionTvecs,
+            cameraRvec, cameraTvec,
+            tvecInlierTreshold,
+            tvecOutlierProbability,
+            rvecInlierTreshold,
+            rvecOutlierProbability,
+            maxRansacIterations,
+            optimalModelTargetProbability
     );
 
     fromVec3dToJdoubleArray(env, cameraRvec, outRvec);
@@ -238,7 +254,7 @@ Java_parsleyj_arucoslam_NativeMethods_estimateCameraPosition(
             0.8,
             cv::Scalar(50.0, 255.0, 50.0)
     );
-    __android_log_print(ANDROID_LOG_DEBUG, "CICCIOBENZINA", "6");
+
     return inliersCount;
 }
 
@@ -669,5 +685,5 @@ Java_parsleyj_arucoslam_NativeMethods_angularDistance(
     cv::Vec3d inRvec1, inRvec2;
     fromjDoubleArrayToVec3d(env, inRvec1_j, inRvec1);
     fromjDoubleArrayToVec3d(env, inRvec2_j, inRvec2);
-    return eulerAnglesAngularDistance(inRvec1, inRvec2);
+    return angularDistance(inRvec1, inRvec2);
 }

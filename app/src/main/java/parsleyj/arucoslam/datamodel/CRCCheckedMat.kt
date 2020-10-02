@@ -9,9 +9,9 @@ import kotlin.reflect.KProperty
 
 /**
  * Used to solve via checksum redundancy the problem where a Mat changes its interal values after
- * the ART GC runs. Apparently Android does not care so much about memory used by jni libraries.
- * This is the non-nullable, lazy and immutable variant of this delegate, i.e. the managed property
- * is initialized with the retriever function at first access and cannot be re-assigned.
+ * the ART GC runs. It seems that the OS does not care so much about memory used by jni libraries.
+ * This is the non-nullable, lazy and immutable variant of this property delegate, i.e. the managed
+ * property is initialized with the retriever function at first access and cannot be re-assigned.
  */
 class CRCCheckedMat(
     private val retriever: () -> Mat

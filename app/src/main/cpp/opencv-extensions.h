@@ -23,6 +23,13 @@ static void _getSingleMarkerObjectPoints(float markerLength, cv::OutputArray _ob
     objPoints.ptr<cv::Vec3f>(0)[3] = cv::Vec3f(-markerLength / 2.f, -markerLength / 2.f, 0);
 }
 
+/**
+ * This is a variation of the original OpenCV function;
+ * the original one accepted only ONE marker length, and all the markers in the space were expected
+ * to be of the same size; here, each marker can have its own size in the space.
+ *
+ * NOTE: After the SLAM readaptation, this is now unused.
+ */
 void estimatePoseSingleMarkers(cv::InputArrayOfArrays _corners, const std::vector<double>& markerLengths,
                                cv::InputArray _cameraMatrix, cv::InputArray _distCoeffs,
                                cv::OutputArray _rvecs, cv::OutputArray _tvecs) {

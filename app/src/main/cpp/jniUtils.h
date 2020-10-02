@@ -11,6 +11,10 @@
 
 #include <opencv2/core/core.hpp>
 
+/**
+ * Takes a jdoubleArray, jintArray etc... and extracts its elements by pushing them on the
+ * {@code out} vector.
+ */
 template<typename inputArrayT, typename inputElementT, typename outputVectorElementT>
 void pushJavaArrayToStdVector(
         JNIEnv *env,
@@ -48,55 +52,37 @@ void pushJavaArrayToStdVector(
     }
 }
 
-template<
-        typename inputArrayT1,
-        typename inputArrayT2,
-        typename outputMapKeyT,
-        typename outputMapValueT
->
-void populateMapFromJavaArrays(
-        JNIEnv *env,
-        inputArrayT1 inKeys,
-        inputArrayT2 inValues,
-        const std::function<outputMapKeyT *(JNIEnv *, inputArrayT1, jboolean *)> &keyBufferResolver,
-        const std::function<outputMapValueT *(JNIEnv *, inputArrayT2, jboolean *)> &valueBufferResolver,
-        std::unordered_map<outputMapKeyT, outputMapValueT> &outMap,
-        int inputOffset = 0,
-        int inputCount = -1
-) {
-    int size = min(env->GetArrayLength(inKeys), env->GetArrayLength(inValues));
 
-    if(inputCount>=0){
-        size = min(size, inputCount);
-    }
-
-    outMap.reserve(size);
-    jboolean isCopy = false;
-    outputMapKeyT *keyBuffer = keyBufferResolver(env, inKeys, &isCopy);
-    outputMapValueT *valueBuffer = valueBufferResolver(env, inValues, &isCopy);
-
-
-    for (int i = inputOffset; i < size; i++) {
-        outMap[keyBuffer[i]] = valueBuffer[i];
-    }
-}
-
-
+/**
+ * Given extracts three jdouble at the beginning of the buffer {@code buf} and writes their values
+ * on {@code outVec}.
+ */
 void getVec3dFromBuffer(const jdouble *buf, cv::Vec3d &outVec){
     outVec[0] = buf[0];
     outVec[1] = buf[1];
     outVec[2] = buf[2];
 }
 
+/**
+ * Writes the three values in a Vec3d in a jdoubleArray
+ */
 void fromVec3dToJdoubleArray(JNIEnv* env, const cv::Vec3d& inVec, jdoubleArray outArray){
     env->SetDoubleArrayRegion(outArray, 0, 3, inVec.val);
 }
 
+/**
+ * Writes the first three values in a jdoubleArray to a Vec3d (assumes that the input array
+ * is of size at least 3).
+ */
 void fromjDoubleArrayToVec3d(JNIEnv* env, const jdoubleArray inArray, cv::Vec3d &outVec){
     jboolean isCopy = false;
     getVec3dFromBuffer(env->GetDoubleArrayElements(inArray, &isCopy), outVec);
 }
 
+/**
+ * Reads triples of numbers from a jdoubleArrays and uses them to construct the Vec3d which are
+ * added to the output std::vector
+ */
 void pushjDoubleArrayToVectorOfVec3ds(
         JNIEnv *env,
         jdoubleArray inArray,
