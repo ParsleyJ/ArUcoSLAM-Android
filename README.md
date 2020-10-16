@@ -11,5 +11,5 @@ Written in Kotlin, Java and C++. Image processing and computer vision tasks are 
 
 ![](arucoslam1.gif)
 
-To ensure fast performances, the processing of the stream of frames is parallelized by using workers implemented via Kotlin's coroutines, which launched on the Android main background dispatcher.
+To ensure fast performances, the processing of the stream of frames is parallelized by using workers implemented via Kotlin's coroutines, which are launched on the Android main background dispatcher.
 Moreover, all big data structures (like the openCV Mat objects that contain the frames) are recycled for each worker, to avoid heavy allocation jobs and GC invocations as most as possible.
