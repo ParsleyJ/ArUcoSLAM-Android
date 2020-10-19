@@ -7,7 +7,7 @@ A 3D map with a view from the top is rendered on the right-bottom corner, which 
 A complex data analysis system performs real time checks on new detected phone poses (by taking into account how such an estimate is computed, along with the history of the previous poses) and ensures that only valid estimates are considered, while invalid estimates (in red) are discarded.
 
 
-Written in Kotlin, Java and C++. Image processing and computer vision tasks are implemented with the help of OpenCV libraries linked to the Java runtime via JNI.
+Written in Kotlin, Java and C++. Image processing and computer vision tasks are implemented with the help of OpenCV native libraries loaded by the Java runtime via JNI.
 
 ![](arucoslam1.gif)
 
