@@ -1,4 +1,7 @@
 # ArUcoSLAM-Android
+
+_(Note: no longer actively maintained)_
+
 An Android app that implements a SLAM system (Simultaneous Localization And Mapping) using ArUco markers and computer vision.
 
 The camera acquires frames that are processed in real time. By analyzing the perspective of the marker images that appear on each frame, relative 3D poses of the markers and of the phone camera can be estimated. 
